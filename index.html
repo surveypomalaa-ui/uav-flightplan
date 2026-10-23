@@ -27,11 +27,19 @@
   .chip[data-status="planned"] { border-color:#ff8c00; } .chip[data-status="planned"] i { background:#ff8c00; }
   .chip[data-status="ended"]   { border-color:#8a8a8a; } .chip[data-status="ended"] i   { background:#8a8a8a; }
   #map { flex:1; min-height:200px; }
+
+  /* bar kecil di bawah peta */
+  #mapBar { display:none; align-items:center; justify-content:space-between; gap:8px;
+            padding:8px 12px; background:#f4f4f4; border-top:1px solid #ddd; font-size:14px; }
+  #app.map-mode #mapBar { display:flex; }
+
+  /* panel untuk tab Drone & Profil */
   #panel { background:#f4f4f4; padding:8px 12px; overflow:auto; font-size:14px; }
-  #app.map-mode #panel { max-height:45vh; }
+  #app.map-mode #panel { display:none; }
   #app:not(.map-mode) #map { display:none; }
   #app:not(.map-mode) #panel { flex:1; }
   .view { display:none; } .view.active { display:block; }
+
   .form { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; }
   .form label { display:flex; flex-direction:column; font-size:12px; color:#444; }
   .form input, .form select { padding:7px; font-size:14px; border:1px solid #bbb; border-radius:6px; background:#fff; }
@@ -44,6 +52,8 @@
   .card { background:#fff; border:1px solid #ddd; border-radius:8px; padding:8px 10px; margin-top:6px; }
   .warn { background:#fff3cd; border:1px solid #ffeeba; color:#6b5200; border-radius:6px; padding:8px; margin-top:6px; }
   h3 { margin:6px 0 0; font-size:15px; }
+
+  /* halaman login */
   #landing { display:none; flex:1; flex-direction:column; align-items:center; justify-content:center;
              text-align:center; padding:24px; color:#fff;
              background:linear-gradient(160deg,#12304d,#1a3a5c 60%,#2b5c8a); }
@@ -56,11 +66,33 @@
   #loginMsg { margin-top:10px; font-size:13px; color:#555; min-height:16px; }
   #app.login-mode #landing { display:flex; }
   #app.login-mode header, #app.login-mode #nav, #app.login-mode #filterBar,
-  #app.login-mode #map, #app.login-mode #panel { display:none !important; }
+  #app.login-mode #map, #app.login-mode #panel, #app.login-mode #mapBar { display:none !important; }
+
+  /* popup form rencana terbang */
+  .modal-back { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none;
+                align-items:flex-end; justify-content:center; z-index:2000; }
+  .modal { background:#fff; width:100%; max-width:480px; border-radius:14px 14px 0 0;
+           padding:14px; max-height:90vh; overflow:auto; box-shadow:0 -4px 24px rgba(0,0,0,.3); }
+  @media (min-width:600px) {
+    .modal-back { align-items:center; }
+    .modal { border-radius:14px; }
+  }
+  .modal-head { display:flex; justify-content:space-between; align-items:center; font-size:16px; }
+  .modal-head .x { background:#eee; color:#333; padding:4px 10px; }
+
+  /* notifikasi */
+  #toast { position:fixed; left:50%; transform:translateX(-50%); bottom:70px; z-index:3000;
+           max-width:90%; padding:10px 14px; border-radius:8px; color:#fff; display:none;
+           box-shadow:0 4px 14px rgba(0,0,0,.3); font-size:14px; }
+  #toast.ok { background:#2e9e44; } #toast.err { background:#c62828; }
+
+  /* pin lokasi */
+  .loc-pin { font-size:30px; line-height:30px; text-align:center; filter:drop-shadow(0 2px 2px rgba(0,0,0,.5)); }
 </style>
 </head>
 <body>
 <div id="app" class="login-mode">
+
   <div id="landing">
     <div class="logo">🛩️</div>
     <h1>UAV Flight Plan</h1>
@@ -70,6 +102,7 @@
       <div id="loginMsg"></div>
     </div>
   </div>
+
   <header>
     <h1>UAV Flight Plan</h1>
     <div id="userBox">
@@ -93,24 +126,12 @@
 
   <div id="map"></div>
 
-  <div id="panel">
-    <!-- LOGIN -->
-    
-    <!-- PETA & JADWAL -->
-    <div class="view" id="view-flight">
-      <div id="info">Gambar poligon area terbang di peta.</div>
-      <div id="flightWarn"></div>
-      <div class="form">
-        <label class="full">Perusahaan <input id="f-pt" readonly></label>
-        <label class="full">Drone <select id="f-drone"></select></label>
-        <label class="full">Tanggal <input id="f-date" type="date"></label>
-        <label>Jam mulai <input id="f-start" type="time"></label>
-        <label>Jam selesai <input id="f-end" type="time"></label>
-        <button id="btnFlight" class="full" disabled>Kirim rencana terbang</button>
-      </div>
-      <div class="msg" id="msg-flight"></div>
-    </div>
+  <div id="mapBar">
+    <span id="info">Gambar poligon area terbang di peta.</span>
+    <button id="btnOpenForm" style="display:none">Isi jadwal</button>
+  </div>
 
+  <div id="panel">
     <!-- DRONE -->
     <div class="view" id="view-drone">
       <h3>Drone terdaftar (<span id="d-pt"></span>)</h3>
@@ -143,13 +164,44 @@
   </div>
 </div>
 
+<!-- POPUP RENCANA TERBANG -->
+<div id="flightModal" class="modal-back">
+  <div class="modal">
+    <div class="modal-head"><b>Rencana Terbang</b><button id="btnCloseModal" class="x">✕</button></div>
+    <div class="card" id="m-info"></div>
+    <div id="flightWarn"></div>
+    <div class="form">
+      <label class="full">Perusahaan <input id="f-pt" readonly></label>
+      <label class="full">Drone <select id="f-drone"></select></label>
+      <label class="full">Tanggal <input id="f-date" type="date"></label>
+      <label>Jam mulai <input id="f-start" type="time"></label>
+      <label>Jam selesai <input id="f-end" type="time"></label>
+      <button id="btnFlight" class="full" disabled>Kirim rencana terbang</button>
+    </div>
+    <div class="msg" id="msg-flight"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/esri-leaflet@3.0.10/dist/esri-leaflet.js"></script>
 <script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="initGoogle()"></script>
 
 <script>
 const CLIENT_ID = '200371532629-ktdgi0s5n18kcklq46tsb7ler93p7rgu.apps.googleusercontent.com';
 const API_URL   = 'https://script.google.com/macros/s/AKfycbzDW89h85pJSqWYkp1nQZhbjsKWkGxtlClf72GsG15R_YxYt9oP4NajVyf5u1CbZ3KE/exec';
+
+/* ====== LAYER DARI ARCGIS ONLINE ======
+   Tambah/ubah daftar ini. url = alamat layer, diakhiri nomor layer (/0, /1, ...).
+   visible: true = langsung tampil saat peta dibuka.
+   Hanya layer yang dibagikan PUBLIK yang bisa dimuat dari sini. */
+const ARCGIS_LAYERS = [
+  { name: 'Grade Jalan',
+    url: 'https://services.arcgis.com/sd07frZndnauMmJH/arcgis/rest/services/Grade_Jalan_Colour_/FeatureServer/0',
+    color: '#e91e63', visible: false }
+];
 
 const COLORS = { ongoing: '#2e9e44', planned: '#ff8c00', ended: '#8a8a8a' };
 const LABELS = { ongoing: 'Ongoing', planned: 'Active plan', ended: 'Ended' };
@@ -171,6 +223,16 @@ function showMsg(view, text, ok) {
   m.textContent = text;
 }
 function clearMsg(view) { const m = $('msg-' + view); m.className = 'msg'; m.textContent = ''; }
+
+let toastTimer;
+function toast(text, ok) {
+  const t = $('toast');
+  t.textContent = text;
+  t.className = ok ? 'ok' : 'err';
+  t.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { t.style.display = 'none'; }, 4500);
+}
 
 /* ---------- API ---------- */
 async function api(action, data) {
@@ -200,6 +262,17 @@ function readPdf(inputEl) {
   });
 }
 
+/* ---------- POPUP FORM ---------- */
+function openModal() {
+  prepareFlightForm();
+  clearMsg('flight');
+  $('flightModal').style.display = 'flex';
+}
+function closeModal() { $('flightModal').style.display = 'none'; }
+$('btnCloseModal').onclick = closeModal;
+$('btnOpenForm').onclick = openModal;
+$('flightModal').addEventListener('click', function (e) { if (e.target === this) closeModal(); });
+
 /* ---------- TAMPILAN ---------- */
 function setView(v) {
   state.view = v;
@@ -208,7 +281,8 @@ function setView(v) {
   const mapMode = (v === 'flight');
   $('app').classList.toggle('map-mode', mapMode);
   $('app').classList.toggle('login-mode', v === 'login');
-  $('filterBar').style.display = (v === 'flight') ? 'flex' : 'none';
+  $('filterBar').style.display = mapMode ? 'flex' : 'none';
+  if (!mapMode) closeModal();
   if (mapMode) setTimeout(function () { map.invalidateSize(); }, 60);
   if (v === 'drone') renderDrones();
   if (v === 'profile') { renderProfile(); loadCompanies(); }
@@ -224,7 +298,7 @@ document.querySelectorAll('#nav button').forEach(function (b) {
 /* ---------- LOGIN ---------- */
 function initGoogle() {
   google.accounts.id.initialize({ client_id: CLIENT_ID, callback: onLogin });
-  google.accounts.id.renderButton($('gbtn'), { theme: 'filled_blue', size: 'medium', text: 'signin_with' });
+  google.accounts.id.renderButton($('gbtn'), { theme: 'filled_blue', size: 'large', text: 'signin_with' });
   if (idToken) { $('loginMsg').textContent = 'Memeriksa sesi...'; checkUser(); }
 }
 function onLogin(resp) {
@@ -238,7 +312,7 @@ function logout(message) {
   state.user = null; state.profile = null; state.flights = null;
   flightsLayer.clearLayers();
   if (currentLayer) { map.removeLayer(currentLayer); currentLayer = null; polygonRing = null; }
-  $('gbtn').style.display = '';
+  $('btnOpenForm').style.display = 'none';
   $('userName').textContent = '';
   $('btnLogout').style.display = 'none';
   $('nav').style.display = 'none';
@@ -252,10 +326,10 @@ async function checkUser() {
     const r = await api('me');
     if (!r.ok) throw new Error(r.error);
     state.user = r.user; state.profile = r.profile;
-    $('gbtn').style.display = 'none';
     $('userName').textContent = 'Halo, ' + r.user.name;
     $('btnLogout').style.display = '';
     $('nav').style.display = 'flex';
+    $('loginMsg').textContent = '';
     $('f-date').min = new Date().toLocaleDateString('sv-SE');
     if (!r.profile.registered) {
       setView('profile');
@@ -275,17 +349,68 @@ const satelit = L.tileLayer(
   { maxZoom: 19, attribution: 'Tiles &copy; Esri' }).addTo(map);
 const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
   { maxZoom: 19, attribution: '&copy; OpenStreetMap' });
-L.control.layers({ 'Satelit': satelit, 'Peta jalan': osm }).addTo(map);
+const topo = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+  { maxZoom: 19, attribution: 'Tiles &copy; Esri' });
 
+/* ---------- LOKASI SAYA (dengan pin) ---------- */
+let locMarker = null, locCircle = null;
 const locBtn = L.control({ position: 'topright' });
 locBtn.onAdd = function () {
   const b = L.DomUtil.create('button');
+  b.id = 'btnLoc';
   b.textContent = '📍 Lokasi saya';
   L.DomEvent.disableClickPropagation(b);
-  b.onclick = function () { map.locate({ setView: true, maxZoom: 16 }); };
+  b.onclick = function () {
+    b.disabled = true; b.textContent = 'Mencari lokasi...';
+    map.locate({ setView: true, maxZoom: 17, enableHighAccuracy: true, timeout: 15000 });
+  };
   return b;
 };
 locBtn.addTo(map);
+
+function resetLocBtn() { const b = $('btnLoc'); if (b) { b.disabled = false; b.textContent = '📍 Lokasi saya'; } }
+
+map.on('locationfound', function (e) {
+  if (locMarker) map.removeLayer(locMarker);
+  if (locCircle) map.removeLayer(locCircle);
+  locCircle = L.circle(e.latlng, { radius: e.accuracy, color: '#4285f4', weight: 1,
+                                   fillOpacity: 0.12, pmIgnore: true, interactive: false }).addTo(map);
+  locMarker = L.marker(e.latlng, {
+    pmIgnore: true,
+    icon: L.divIcon({ className: 'loc-pin', html: '📍', iconSize: [30, 30], iconAnchor: [15, 30], popupAnchor: [0, -28] })
+  }).addTo(map).bindPopup('<b>Lokasi Anda</b><br>Akurasi ±' + Math.round(e.accuracy) + ' m').openPopup();
+  resetLocBtn();
+});
+map.on('locationerror', function (e) {
+  resetLocBtn();
+  toast('Lokasi tidak bisa diambil. Pastikan izin lokasi diaktifkan di browser. (' + e.message + ')', false);
+});
+
+/* ---------- LAYER ARCGIS ---------- */
+function popupFromProps(title, p) {
+  const keys = Object.keys(p || {}).filter(function (k) { return !/^(OBJECTID|GlobalID|Shape|FID)/i.test(k); }).slice(0, 8);
+  return '<b>' + esc(title) + '</b>' + keys.map(function (k) { return '<br>' + esc(k) + ': ' + esc(p[k]); }).join('');
+}
+
+const overlays = {};
+if (window.L && L.esri) {
+  ARCGIS_LAYERS.forEach(function (cfg) {
+    const color = cfg.color || '#3388ff';
+    const lyr = L.esri.featureLayer({
+      url: cfg.url,
+      pmIgnore: true,
+      style: function () { return { color: color, weight: 2, fillOpacity: 0.2 }; },
+      pointToLayer: function (geo, latlng) {
+        return L.circleMarker(latlng, { radius: 5, color: color, fillOpacity: 0.8, pmIgnore: true });
+      }
+    });
+    lyr.bindPopup(function (layer) { return popupFromProps(cfg.name, layer.feature.properties); });
+    lyr.on('requesterror', function () { console.warn('Layer ArcGIS gagal dimuat:', cfg.name); });
+    overlays[cfg.name] = lyr;
+    if (cfg.visible) lyr.addTo(map);
+  });
+}
 
 /* ---------- PENERBANGAN + FILTER STATUS ---------- */
 const flightsLayer = L.geoJSON(null, {
@@ -303,6 +428,9 @@ const flightsLayer = L.geoJSON(null, {
       '<br><b style="color:' + (COLORS[p.status] || '#888') + '">' + esc(LABELS[p.status] || p.status) + '</b>');
   }
 }).addTo(map);
+overlays['Area terbang (rencana)'] = flightsLayer;
+
+L.control.layers({ 'Satelit': satelit, 'Peta jalan': osm, 'Topografi': topo }, overlays).addTo(map);
 
 async function loadFlights() {
   try {
@@ -311,7 +439,7 @@ async function loadFlights() {
     state.flights = r.geojson;
     renderFlights();
   } catch (err) {
-    if (err.message !== 'Sesi habis') showMsg('flight', 'Gagal memuat area terbang: ' + err.message, false);
+    if (err.message !== 'Sesi habis') toast('Gagal memuat area terbang: ' + err.message, false);
   }
 }
 
@@ -347,13 +475,28 @@ map.pm.addControls({
   editMode: true, dragMode: true, removalMode: true
 });
 
+function areaHa(ring) {                       // perkiraan luas (hektar)
+  const lat0 = ring.reduce(function (s, c) { return s + c[1]; }, 0) / ring.length;
+  const kx = 111320 * Math.cos(lat0 * Math.PI / 180), ky = 110540;
+  let s = 0;
+  for (let i = 0; i < ring.length - 1; i++) {
+    s += (ring[i][0] * kx) * (ring[i + 1][1] * ky) - (ring[i + 1][0] * kx) * (ring[i][1] * ky);
+  }
+  return Math.abs(s) / 2 / 10000;
+}
+
 function updatePolygon() {
   if (!currentLayer) {
     polygonRing = null;
     $('info').textContent = 'Gambar poligon area terbang di peta.';
+    $('btnOpenForm').style.display = 'none';
+    $('m-info').textContent = '';
   } else {
     polygonRing = currentLayer.toGeoJSON().geometry.coordinates[0];
-    $('info').textContent = 'Area terbang siap: ' + (polygonRing.length - 1) + ' titik sudut. Lengkapi jadwal lalu kirim.';
+    const txt = (polygonRing.length - 1) + ' titik sudut, luas ± ' + areaHa(polygonRing).toFixed(1) + ' ha';
+    $('info').textContent = 'Area terbang siap: ' + txt;
+    $('m-info').textContent = 'Area terbang: ' + txt;
+    $('btnOpenForm').style.display = '';
   }
   refreshFlightButton();
 }
@@ -362,8 +505,9 @@ map.on('pm:create', function (e) {
   currentLayer = e.layer;
   currentLayer.on('pm:edit', updatePolygon);
   currentLayer.on('pm:dragend', updatePolygon);
-  currentLayer.on('pm:remove', function () { currentLayer = null; updatePolygon(); });
+  currentLayer.on('pm:remove', function () { currentLayer = null; updatePolygon(); closeModal(); });
   updatePolygon();
+  openModal();                                  // popup muncul setelah poligon selesai
 });
 
 /* ---------- FORM RENCANA TERBANG ---------- */
@@ -382,13 +526,16 @@ function prepareFlightForm() {
   const reason = flightBlockedReason();
   $('flightWarn').innerHTML = reason ? '<div class="warn">' + esc(reason) + '</div>' : '';
   $('f-pt').value = (p && p.pt) || '';
+  if (!$('f-date').value) $('f-date').value = new Date().toLocaleDateString('sv-SE');
   const sel = $('f-drone');
+  const keep = sel.value;
   sel.innerHTML = '';
   ((p && p.drones) || []).forEach(function (d) {
     const o = document.createElement('option');
     o.value = d.drone_id; o.textContent = d.label;
     sel.appendChild(o);
   });
+  if (keep) sel.value = keep;
   refreshFlightButton();
 }
 
@@ -406,9 +553,10 @@ $('btnFlight').onclick = async function () {
   try {
     const r = await api('submitFlight', data);
     if (r.ok) {
-      showMsg('flight', '✔ Rencana terbang tersimpan.', true);
+      closeModal();
       if (currentLayer) { map.removeLayer(currentLayer); currentLayer = null; }
       updatePolygon();
+      toast('✔ Rencana terbang tersimpan.', true);
       loadFlights();
     } else if (r.conflict) {
       showMsg('flight', '✖ ' + r.error + ' ' + r.conflicts.join('; '), false);
