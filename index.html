@@ -1,11 +1,140 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>UAV Flight Plan</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UAV Flight Plan</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.css">
+<style>
+  html, body { height:100%; margin:0; font-family:Arial,sans-serif; }
+  #app { display:flex; flex-direction:column; height:100%; }
+  header { padding:8px 12px; background:#1a3a5c; color:#fff; display:flex;
+           align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0; }
+  #userBox { font-size:13px; }
+  #map { flex:1; }
+  #info { padding:8px 12px; background:#f4f4f4; font-size:14px; }
+  button { padding:6px 12px; border:0; border-radius:6px; background:#4285f4;
+           color:#fff; cursor:pointer; }
+</style>
 </head>
 <body>
-  <h1>Halo, hosting berhasil ✅</h1>
+<div id="app">
+  <header>
+    <h1>UAV Flight Plan</h1>
+    <div id="userBox">
+      <div id="gbtn"></div>
+      <span id="userName"></span>
+    </div>
+  </header>
+  <div id="map"></div>
+  <div id="info">Login dulu, lalu gambar area terbang di peta.</div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer onload="initGoogle()"></script>
+
+<script>
+const CLIENT_ID = '200371532629-ktdgi0s5n18kcklq46tsb7ler93p7rgu.apps.googleusercontent.com';
+const API_URL   = 'https://script.google.com/macros/s/AKfycbzDW89h85pJSqWYkp1nQZhbjsKWkGxtlClf72GsG15R_YxYt9oP4NajVyf5u1CbZ3KE/exec';
+
+let idToken = sessionStorage.getItem('idToken');
+let currentLayer = null;
+let polygonGeoJSON = null;
+
+/* ---------- API ---------- */
+async function api(action, data) {
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(Object.assign({ action: action, idToken: idToken }, data || {}))
+  });
+  return res.json();
+}
+
+/* ---------- LOGIN ---------- */
+function initGoogle() {
+  google.accounts.id.initialize({ client_id: CLIENT_ID, callback: onLogin });
+  google.accounts.id.renderButton(document.getElementById('gbtn'),
+    { theme: 'filled_blue', size: 'medium', text: 'signin_with' });
+  if (idToken) checkUser();
+}
+
+function onLogin(resp) {
+  idToken = resp.credential;
+  sessionStorage.setItem('idToken', idToken);
+  checkUser();
+}
+
+async function checkUser() {
+  try {
+    const r = await api('whoami');
+    if (r.ok) {
+      document.getElementById('gbtn').style.display = 'none';
+      document.getElementById('userName').textContent = 'Halo, ' + r.user.name;
+    } else {
+      throw new Error(r.error);
+    }
+  } catch (err) {
+    idToken = null;
+    sessionStorage.removeItem('idToken');
+    document.getElementById('gbtn').style.display = '';
+    document.getElementById('userName').textContent = '';
+    document.getElementById('info').textContent = 'Login gagal: ' + err.message;
+  }
+}
+
+/* ---------- PETA ---------- */
+const map = L.map('map').setView([-2.5, 118], 5);
+
+const satelit = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  { maxZoom: 19, attribution: 'Tiles &copy; Esri' }).addTo(map);
+const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  { maxZoom: 19, attribution: '&copy; OpenStreetMap' });
+L.control.layers({ 'Satelit': satelit, 'Peta jalan': osm }).addTo(map);
+
+// Tombol lokasi saya
+const locBtn = L.control({ position: 'topright' });
+locBtn.onAdd = function () {
+  const b = L.DomUtil.create('button');
+  b.textContent = '📍 Lokasi saya';
+  L.DomEvent.disableClickPropagation(b);
+  b.onclick = function () { map.locate({ setView: true, maxZoom: 16 }); };
+  return b;
+};
+locBtn.addTo(map);
+
+/* ---------- GAMBAR POLIGON ---------- */
+map.pm.addControls({
+  position: 'topleft',
+  drawMarker: false, drawCircleMarker: false, drawPolyline: false,
+  drawCircle: false, drawText: false, cutPolygon: false, rotateMode: false,
+  drawRectangle: true, drawPolygon: true,
+  editMode: true, dragMode: true, removalMode: true
+});
+
+function updatePolygon() {
+  if (!currentLayer) {
+    polygonGeoJSON = null;
+    document.getElementById('info').textContent = 'Belum ada area. Gambar poligon di peta.';
+    return;
+  }
+  polygonGeoJSON = currentLayer.toGeoJSON();
+  const n = polygonGeoJSON.geometry.coordinates[0].length - 1;
+  document.getElementById('info').textContent = 'Area terbang siap: ' + n + ' titik sudut.';
+}
+
+map.on('pm:create', function (e) {
+  if (currentLayer) map.removeLayer(currentLayer);   // hanya satu poligon
+  currentLayer = e.layer;
+  currentLayer.on('pm:edit', updatePolygon);
+  currentLayer.on('pm:dragend', updatePolygon);
+  currentLayer.on('pm:remove', function () { currentLayer = null; updatePolygon(); });
+  updatePolygon();
+});
+</script>
 </body>
 </html>
