@@ -44,14 +44,35 @@
   .card { background:#fff; border:1px solid #ddd; border-radius:8px; padding:8px 10px; margin-top:6px; }
   .warn { background:#fff3cd; border:1px solid #ffeeba; color:#6b5200; border-radius:6px; padding:8px; margin-top:6px; }
   h3 { margin:6px 0 0; font-size:15px; }
+  #landing { display:none; flex:1; flex-direction:column; align-items:center; justify-content:center;
+             text-align:center; padding:24px; color:#fff;
+             background:linear-gradient(160deg,#12304d,#1a3a5c 60%,#2b5c8a); }
+  #landing .logo { font-size:56px; }
+  #landing h1 { margin:8px 0 6px; font-size:26px; }
+  #landing p { margin:0 0 22px; color:#cfe0f3; max-width:340px; line-height:1.4; }
+  #landing .box { background:#fff; color:#222; border-radius:12px; padding:20px 24px;
+                  min-width:260px; box-shadow:0 8px 24px rgba(0,0,0,.25); }
+  #gbtn { display:flex; justify-content:center; min-height:44px; }
+  #loginMsg { margin-top:10px; font-size:13px; color:#555; min-height:16px; }
+  #app.login-mode #landing { display:flex; }
+  #app.login-mode header, #app.login-mode #nav, #app.login-mode #filterBar,
+  #app.login-mode #map, #app.login-mode #panel { display:none !important; }
 </style>
 </head>
 <body>
-<div id="app" class="map-mode">
+<div id="app" class="login-mode">
+  <div id="landing">
+    <div class="logo">🛩️</div>
+    <h1>UAV Flight Plan</h1>
+    <p>Sistem pendaftaran rencana terbang drone. Masuk dengan akun Google untuk melanjutkan.</p>
+    <div class="box">
+      <div id="gbtn"></div>
+      <div id="loginMsg"></div>
+    </div>
+  </div>
   <header>
     <h1>UAV Flight Plan</h1>
     <div id="userBox">
-      <div id="gbtn"></div>
       <span id="userName"></span>
       <button id="btnLogout" style="display:none;padding:4px 10px;background:#5b7a99">Keluar</button>
     </div>
@@ -74,8 +95,7 @@
 
   <div id="panel">
     <!-- LOGIN -->
-    <div class="view active" id="view-login">Login dulu untuk melihat area terbang dan mengirim rencana.</div>
-
+    
     <!-- PETA & JADWAL -->
     <div class="view" id="view-flight">
       <div id="info">Gambar poligon area terbang di peta.</div>
@@ -185,8 +205,9 @@ function setView(v) {
   state.view = v;
   document.querySelectorAll('.view').forEach(function (el) { el.classList.toggle('active', el.id === 'view-' + v); });
   document.querySelectorAll('#nav button').forEach(function (b) { b.classList.toggle('active', b.dataset.view === v); });
-  const mapMode = (v === 'flight' || v === 'login');
+  const mapMode = (v === 'flight');
   $('app').classList.toggle('map-mode', mapMode);
+  $('app').classList.toggle('login-mode', v === 'login');
   $('filterBar').style.display = (v === 'flight') ? 'flex' : 'none';
   if (mapMode) setTimeout(function () { map.invalidateSize(); }, 60);
   if (v === 'drone') renderDrones();
@@ -204,7 +225,7 @@ document.querySelectorAll('#nav button').forEach(function (b) {
 function initGoogle() {
   google.accounts.id.initialize({ client_id: CLIENT_ID, callback: onLogin });
   google.accounts.id.renderButton($('gbtn'), { theme: 'filled_blue', size: 'medium', text: 'signin_with' });
-  if (idToken) checkUser();
+  if (idToken) { $('loginMsg').textContent = 'Memeriksa sesi...'; checkUser(); }
 }
 function onLogin(resp) {
   idToken = resp.credential;
@@ -222,7 +243,7 @@ function logout(message) {
   $('btnLogout').style.display = 'none';
   $('nav').style.display = 'none';
   setView('login');
-  $('view-login').textContent = message || 'Login dulu untuk melihat area terbang dan mengirim rencana.';
+  $('loginMsg').textContent = message || '';
 }
 $('btnLogout').onclick = function () { logout(); };
 
