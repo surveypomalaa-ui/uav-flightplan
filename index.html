@@ -12,38 +12,114 @@
   header { padding:8px 12px; background:#1a3a5c; color:#fff; display:flex;
            align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
   header h1 { font-size:16px; margin:0; }
-  #userName { font-size:13px; }
-  #map { flex:1; min-height:240px; }
-  #panel { background:#f4f4f4; padding:8px 12px; max-height:45vh; overflow:auto; font-size:14px; }
-  #form { display:none; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; }
-  #form label { display:flex; flex-direction:column; font-size:12px; color:#444; }
-  #form input { padding:6px; font-size:14px; border:1px solid #bbb; border-radius:6px; }
-  #form .full { grid-column:1 / -1; }
+  #userBox { display:flex; align-items:center; gap:8px; font-size:13px; }
+  #nav { display:none; background:#12304d; padding:0 6px; overflow-x:auto; }
+  #nav button { background:none; border-radius:0; color:#cfe0f3; padding:10px 12px;
+                border-bottom:3px solid transparent; white-space:nowrap; }
+  #nav button.active { color:#fff; border-bottom-color:#4285f4; }
+  #filterBar { display:none; gap:6px; padding:6px 10px; background:#fff;
+               border-bottom:1px solid #ddd; flex-wrap:wrap; align-items:center; font-size:13px; }
+  .chip { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:16px;
+          border:2px solid; background:#fff; color:#222; cursor:pointer; font-size:13px; }
+  .chip i { width:10px; height:10px; border-radius:50%; display:inline-block; }
+  .chip.off { opacity:.45; }
+  .chip[data-status="ongoing"] { border-color:#2e9e44; } .chip[data-status="ongoing"] i { background:#2e9e44; }
+  .chip[data-status="planned"] { border-color:#ff8c00; } .chip[data-status="planned"] i { background:#ff8c00; }
+  .chip[data-status="ended"]   { border-color:#8a8a8a; } .chip[data-status="ended"] i   { background:#8a8a8a; }
+  #map { flex:1; min-height:200px; }
+  #panel { background:#f4f4f4; padding:8px 12px; overflow:auto; font-size:14px; }
+  #app.map-mode #panel { max-height:45vh; }
+  #app:not(.map-mode) #map { display:none; }
+  #app:not(.map-mode) #panel { flex:1; }
+  .view { display:none; } .view.active { display:block; }
+  .form { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; }
+  .form label { display:flex; flex-direction:column; font-size:12px; color:#444; }
+  .form input, .form select { padding:7px; font-size:14px; border:1px solid #bbb; border-radius:6px; background:#fff; }
+  .form .full { grid-column:1 / -1; }
   button { padding:8px 14px; border:0; border-radius:6px; background:#4285f4; color:#fff; cursor:pointer; font-size:14px; }
   button:disabled { background:#9bb7ea; cursor:not-allowed; }
-  #msg { margin-top:8px; padding:8px; border-radius:6px; display:none; }
-  #msg.ok  { display:block; background:#e8ffe8; color:#17652a; }
-  #msg.err { display:block; background:#ffe8e8; color:#8a1f1f; }
+  .msg { margin-top:8px; padding:8px; border-radius:6px; display:none; }
+  .msg.ok  { display:block; background:#e8ffe8; color:#17652a; }
+  .msg.err { display:block; background:#ffe8e8; color:#8a1f1f; }
+  .card { background:#fff; border:1px solid #ddd; border-radius:8px; padding:8px 10px; margin-top:6px; }
+  .warn { background:#fff3cd; border:1px solid #ffeeba; color:#6b5200; border-radius:6px; padding:8px; margin-top:6px; }
+  h3 { margin:6px 0 0; font-size:15px; }
 </style>
 </head>
 <body>
-<div id="app">
+<div id="app" class="map-mode">
   <header>
     <h1>UAV Flight Plan</h1>
-    <div><div id="gbtn"></div><span id="userName"></span></div>
-  </header>
-  <div id="map"></div>
-  <div id="panel">
-    <div id="info">Login dulu, lalu gambar area terbang di peta.</div>
-    <div id="form">
-      <label class="full">Perusahaan <input id="pt" maxlength="150"></label>
-      <label class="full">Drone (model) <input id="drone" maxlength="150"></label>
-      <label class="full">Tanggal <input id="fdate" type="date"></label>
-      <label>Jam mulai <input id="tstart" type="time"></label>
-      <label>Jam selesai <input id="tend" type="time"></label>
-      <button id="btnSubmit" class="full" disabled>Kirim rencana terbang</button>
+    <div id="userBox">
+      <div id="gbtn"></div>
+      <span id="userName"></span>
+      <button id="btnLogout" style="display:none;padding:4px 10px;background:#5b7a99">Keluar</button>
     </div>
-    <div id="msg"></div>
+  </header>
+
+  <div id="nav">
+    <button data-view="flight">🗺 Peta &amp; Jadwal</button>
+    <button data-view="drone">✈ Drone</button>
+    <button data-view="profile">👤 Profil Pilot</button>
+  </div>
+
+  <div id="filterBar">
+    <span>Tampilkan:</span>
+    <button class="chip" data-status="ongoing"><i></i>Ongoing <b id="cnt-ongoing">0</b></button>
+    <button class="chip" data-status="planned"><i></i>Active plan <b id="cnt-planned">0</b></button>
+    <button class="chip off" data-status="ended"><i></i>Ended <b id="cnt-ended">0</b></button>
+  </div>
+
+  <div id="map"></div>
+
+  <div id="panel">
+    <!-- LOGIN -->
+    <div class="view active" id="view-login">Login dulu untuk melihat area terbang dan mengirim rencana.</div>
+
+    <!-- PETA & JADWAL -->
+    <div class="view" id="view-flight">
+      <div id="info">Gambar poligon area terbang di peta.</div>
+      <div id="flightWarn"></div>
+      <div class="form">
+        <label class="full">Perusahaan <input id="f-pt" readonly></label>
+        <label class="full">Drone <select id="f-drone"></select></label>
+        <label class="full">Tanggal <input id="f-date" type="date"></label>
+        <label>Jam mulai <input id="f-start" type="time"></label>
+        <label>Jam selesai <input id="f-end" type="time"></label>
+        <button id="btnFlight" class="full" disabled>Kirim rencana terbang</button>
+      </div>
+      <div class="msg" id="msg-flight"></div>
+    </div>
+
+    <!-- DRONE -->
+    <div class="view" id="view-drone">
+      <h3>Drone terdaftar (<span id="d-pt"></span>)</h3>
+      <div id="droneList"></div>
+      <h3 style="margin-top:14px">Daftarkan drone baru</h3>
+      <div class="form">
+        <label>Manufaktur <input id="d-manu" maxlength="100" placeholder="mis. DJI"></label>
+        <label>Model <input id="d-model" maxlength="100" placeholder="mis. Mavic 3 Enterprise"></label>
+        <label>Tahun produksi <input id="d-year" maxlength="4" inputmode="numeric" placeholder="2024"></label>
+        <label>Nomor seri <input id="d-sn" maxlength="60"></label>
+        <label class="full">Sertifikat / SIDOPI (PDF, maks 5 MB) <input id="d-cert" type="file" accept="application/pdf"></label>
+        <button id="btnDrone" class="full">Daftarkan drone</button>
+      </div>
+      <div class="msg" id="msg-drone"></div>
+    </div>
+
+    <!-- PROFIL PILOT -->
+    <div class="view" id="view-profile">
+      <div id="profileStatus"></div>
+      <div class="form">
+        <label class="full">Nama lengkap <input id="p-nama" maxlength="100"></label>
+        <label class="full">Perusahaan <input id="p-pt" maxlength="150" list="companyList" placeholder="Pilih atau ketik perusahaan"></label>
+        <datalist id="companyList"></datalist>
+        <label class="full">Sertifikat pilot berlaku sampai <input id="p-valid" type="date"></label>
+        <label class="full">Sertifikat pilot (PDF, maks 5 MB) <input id="p-cert" type="file" accept="application/pdf"></label>
+        <button id="btnPilot" class="full">Daftar sebagai pilot</button>
+      </div>
+      <div class="msg" id="msg-profile"></div>
+    </div>
   </div>
 </div>
 
@@ -55,20 +131,26 @@
 const CLIENT_ID = '200371532629-ktdgi0s5n18kcklq46tsb7ler93p7rgu.apps.googleusercontent.com';
 const API_URL   = 'https://script.google.com/macros/s/AKfycbzDW89h85pJSqWYkp1nQZhbjsKWkGxtlClf72GsG15R_YxYt9oP4NajVyf5u1CbZ3KE/exec';
 
+const COLORS = { ongoing: '#2e9e44', planned: '#ff8c00', ended: '#8a8a8a' };
+const LABELS = { ongoing: 'Ongoing', planned: 'Active plan', ended: 'Ended' };
+
 let idToken = sessionStorage.getItem('idToken');
 let currentLayer = null;
 let polygonRing = null;
+const state = { view: 'login', user: null, profile: null, flights: null,
+                filters: { ongoing: true, planned: true, ended: false } };
 
 const $ = id => document.getElementById(id);
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g,
     c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
-function showMsg(text, ok) {
-  const m = $('msg');
-  m.className = ok ? 'ok' : 'err';
+function showMsg(view, text, ok) {
+  const m = $('msg-' + view);
+  m.className = 'msg ' + (ok ? 'ok' : 'err');
   m.textContent = text;
 }
+function clearMsg(view) { const m = $('msg-' + view); m.className = 'msg'; m.textContent = ''; }
 
 /* ---------- API ---------- */
 async function api(action, data) {
@@ -77,8 +159,46 @@ async function api(action, data) {
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify(Object.assign({ action: action, idToken: idToken }, data || {}))
   });
-  return res.json();
+  const r = await res.json();
+  if (!r.ok && /Token tidak valid|Belum login|Token bukan/.test(r.error || '')) {
+    logout('Sesi habis, silakan login lagi.');
+    throw new Error('Sesi habis');
+  }
+  return r;
 }
+
+function readPdf(inputEl) {
+  return new Promise(function (resolve, reject) {
+    const f = inputEl.files[0];
+    if (!f) return reject(new Error('Pilih file PDF sertifikat dulu'));
+    if (f.type !== 'application/pdf' && !/\.pdf$/i.test(f.name)) return reject(new Error('File harus PDF'));
+    if (f.size > 5 * 1024 * 1024) return reject(new Error('Ukuran file maksimal 5 MB'));
+    const rd = new FileReader();
+    rd.onload = function () { resolve(String(rd.result).split(',')[1]); };
+    rd.onerror = function () { reject(new Error('Gagal membaca file')); };
+    rd.readAsDataURL(f);
+  });
+}
+
+/* ---------- TAMPILAN ---------- */
+function setView(v) {
+  state.view = v;
+  document.querySelectorAll('.view').forEach(function (el) { el.classList.toggle('active', el.id === 'view-' + v); });
+  document.querySelectorAll('#nav button').forEach(function (b) { b.classList.toggle('active', b.dataset.view === v); });
+  const mapMode = (v === 'flight' || v === 'login');
+  $('app').classList.toggle('map-mode', mapMode);
+  $('filterBar').style.display = (v === 'flight') ? 'flex' : 'none';
+  if (mapMode) setTimeout(function () { map.invalidateSize(); }, 60);
+  if (v === 'drone') renderDrones();
+  if (v === 'profile') { renderProfile(); loadCompanies(); }
+  if (v === 'flight') { prepareFlightForm(); loadFlights(); }
+}
+document.querySelectorAll('#nav button').forEach(function (b) {
+  b.onclick = function () {
+    if (!state.profile || !state.profile.registered) { return setView('profile'); }
+    setView(b.dataset.view);
+  };
+});
 
 /* ---------- LOGIN ---------- */
 function initGoogle() {
@@ -94,23 +214,36 @@ function onLogin(resp) {
 function logout(message) {
   idToken = null;
   sessionStorage.removeItem('idToken');
+  state.user = null; state.profile = null; state.flights = null;
+  flightsLayer.clearLayers();
+  if (currentLayer) { map.removeLayer(currentLayer); currentLayer = null; polygonRing = null; }
   $('gbtn').style.display = '';
   $('userName').textContent = '';
-  $('form').style.display = 'none';
-  if (message) $('info').textContent = message;
+  $('btnLogout').style.display = 'none';
+  $('nav').style.display = 'none';
+  setView('login');
+  $('view-login').textContent = message || 'Login dulu untuk melihat area terbang dan mengirim rencana.';
 }
+$('btnLogout').onclick = function () { logout(); };
+
 async function checkUser() {
   try {
-    const r = await api('whoami');
+    const r = await api('me');
     if (!r.ok) throw new Error(r.error);
+    state.user = r.user; state.profile = r.profile;
     $('gbtn').style.display = 'none';
     $('userName').textContent = 'Halo, ' + r.user.name;
-    $('form').style.display = 'grid';
-    $('fdate').min = new Date().toLocaleDateString('sv-SE');
-    updatePolygon();
-    loadFlights();
+    $('btnLogout').style.display = '';
+    $('nav').style.display = 'flex';
+    $('f-date').min = new Date().toLocaleDateString('sv-SE');
+    if (!r.profile.registered) {
+      setView('profile');
+      showMsg('profile', 'Anda belum terdaftar. Lengkapi data pilot di bawah untuk mulai mengirim rencana terbang.', false);
+    } else {
+      setView('flight');
+    }
   } catch (err) {
-    logout('Login gagal: ' + err.message);
+    if (err.message !== 'Sesi habis') logout('Login gagal: ' + err.message);
   }
 }
 
@@ -133,14 +266,20 @@ locBtn.onAdd = function () {
 };
 locBtn.addTo(map);
 
-/* ---------- PENERBANGAN LAIN (oranye) ---------- */
+/* ---------- PENERBANGAN + FILTER STATUS ---------- */
 const flightsLayer = L.geoJSON(null, {
   pmIgnore: true,
-  style: { color: '#ff8c00', weight: 2, fillOpacity: 0.25 },
+  style: function (f) {
+    const p = f.properties;
+    return { color: COLORS[p.status] || '#888', weight: p.mine ? 4 : 2,
+             fillOpacity: p.status === 'ended' ? 0.1 : 0.25 };
+  },
   onEachFeature: function (f, layer) {
     const p = f.properties;
-    layer.bindPopup('<b>' + esc(p.nama) + '</b><br>' + esc(p.pt) + '<br>' + esc(p.dr_details) +
-      '<br>' + esc(p.flight_date) + ' ' + esc(p.t_start) + '–' + esc(p.t_end));
+    layer.bindPopup('<b>' + esc(p.nama) + '</b>' + (p.mine ? ' (Anda)' : '') +
+      '<br>' + esc(p.pt) + '<br>' + esc(p.dr_details) +
+      '<br>' + esc(p.flight_date) + ' ' + esc(p.t_start) + '–' + esc(p.t_end) +
+      '<br><b style="color:' + (COLORS[p.status] || '#888') + '">' + esc(LABELS[p.status] || p.status) + '</b>');
   }
 }).addTo(map);
 
@@ -148,12 +287,35 @@ async function loadFlights() {
   try {
     const r = await api('listFlights');
     if (!r.ok) throw new Error(r.error);
-    flightsLayer.clearLayers();
-    flightsLayer.addData(r.geojson);
+    state.flights = r.geojson;
+    renderFlights();
   } catch (err) {
-    showMsg('Gagal memuat area terbang lain: ' + err.message, false);
+    if (err.message !== 'Sesi habis') showMsg('flight', 'Gagal memuat area terbang: ' + err.message, false);
   }
 }
+
+function renderFlights() {
+  const all = (state.flights && state.flights.features) || [];
+  const counts = { ongoing: 0, planned: 0, ended: 0 };
+  all.forEach(function (f) { if (counts[f.properties.status] !== undefined) counts[f.properties.status]++; });
+  Object.keys(counts).forEach(function (k) { $('cnt-' + k).textContent = counts[k]; });
+
+  flightsLayer.clearLayers();
+  flightsLayer.addData({
+    type: 'FeatureCollection',
+    features: all.filter(function (f) { return state.filters[f.properties.status]; })
+  });
+}
+
+document.querySelectorAll('.chip').forEach(function (c) {
+  c.onclick = function () {
+    const s = c.dataset.status;
+    state.filters[s] = !state.filters[s];
+    c.classList.toggle('off', !state.filters[s]);
+    renderFlights();
+  };
+});
+setInterval(function () { if (idToken && state.view === 'flight') loadFlights(); }, 60000);
 
 /* ---------- GAMBAR POLIGON ---------- */
 map.pm.addControls({
@@ -167,15 +329,13 @@ map.pm.addControls({
 function updatePolygon() {
   if (!currentLayer) {
     polygonRing = null;
-    $('btnSubmit').disabled = true;
-    $('info').textContent = idToken ? 'Belum ada area. Gambar poligon di peta.' : 'Login dulu, lalu gambar area terbang di peta.';
-    return;
+    $('info').textContent = 'Gambar poligon area terbang di peta.';
+  } else {
+    polygonRing = currentLayer.toGeoJSON().geometry.coordinates[0];
+    $('info').textContent = 'Area terbang siap: ' + (polygonRing.length - 1) + ' titik sudut. Lengkapi jadwal lalu kirim.';
   }
-  polygonRing = currentLayer.toGeoJSON().geometry.coordinates[0];
-  $('btnSubmit').disabled = false;
-  $('info').textContent = 'Area terbang siap: ' + (polygonRing.length - 1) + ' titik sudut. Lengkapi jadwal lalu kirim.';
+  refreshFlightButton();
 }
-
 map.on('pm:create', function (e) {
   if (currentLayer) map.removeLayer(currentLayer);
   currentLayer = e.layer;
@@ -185,39 +345,140 @@ map.on('pm:create', function (e) {
   updatePolygon();
 });
 
-/* ---------- KIRIM ---------- */
-$('btnSubmit').onclick = async function () {
-  const btn = $('btnSubmit');
+/* ---------- FORM RENCANA TERBANG ---------- */
+function flightBlockedReason() {
+  const p = state.profile;
+  if (!p || !p.registered) return 'Anda belum terdaftar sebagai pilot (tab Profil Pilot).';
+  if (p.expired) return 'Sertifikat pilot sudah kedaluwarsa. Perbarui di tab Profil Pilot.';
+  if (!p.drones || !p.drones.length) return 'Perusahaan Anda belum punya drone terdaftar. Daftarkan di tab Drone.';
+  return '';
+}
+function refreshFlightButton() {
+  $('btnFlight').disabled = !(polygonRing && !flightBlockedReason());
+}
+function prepareFlightForm() {
+  const p = state.profile;
+  const reason = flightBlockedReason();
+  $('flightWarn').innerHTML = reason ? '<div class="warn">' + esc(reason) + '</div>' : '';
+  $('f-pt').value = (p && p.pt) || '';
+  const sel = $('f-drone');
+  sel.innerHTML = '';
+  ((p && p.drones) || []).forEach(function (d) {
+    const o = document.createElement('option');
+    o.value = d.drone_id; o.textContent = d.label;
+    sel.appendChild(o);
+  });
+  refreshFlightButton();
+}
+
+$('btnFlight').onclick = async function () {
+  const btn = $('btnFlight');
+  clearMsg('flight');
   const data = {
-    pt: $('pt').value.trim(), dr_details: $('drone').value.trim(),
-    flight_date: $('fdate').value, t_start: $('tstart').value, t_end: $('tend').value,
-    polygon: polygonRing
+    drone_id: $('f-drone').value, flight_date: $('f-date').value,
+    t_start: $('f-start').value, t_end: $('f-end').value, polygon: polygonRing
   };
-  if (!data.pt || !data.dr_details || !data.flight_date || !data.t_start || !data.t_end) {
-    return showMsg('Lengkapi semua kolom dulu.', false);
+  if (!data.drone_id || !data.flight_date || !data.t_start || !data.t_end) {
+    return showMsg('flight', 'Lengkapi semua kolom dulu.', false);
   }
-  btn.disabled = true;
-  btn.textContent = 'Mengirim...';
+  btn.disabled = true; btn.textContent = 'Mengirim...';
   try {
     const r = await api('submitFlight', data);
     if (r.ok) {
-      showMsg('✔ Rencana terbang tersimpan.', true);
+      showMsg('flight', '✔ Rencana terbang tersimpan.', true);
       if (currentLayer) { map.removeLayer(currentLayer); currentLayer = null; }
       updatePolygon();
       loadFlights();
     } else if (r.conflict) {
-      showMsg('✖ ' + r.error + ' ' + r.conflicts.join('; '), false);
-    } else if (/token|login/i.test(r.error || '')) {
-      logout('Sesi habis, silakan login lagi.');
-      showMsg('Sesi habis, silakan login lagi.', false);
+      showMsg('flight', '✖ ' + r.error + ' ' + r.conflicts.join('; '), false);
     } else {
-      showMsg('✖ ' + r.error, false);
+      showMsg('flight', '✖ ' + r.error, false);
     }
   } catch (err) {
-    showMsg('✖ Gagal terhubung: ' + err.message, false);
+    if (err.message !== 'Sesi habis') showMsg('flight', '✖ Gagal terhubung: ' + err.message, false);
   } finally {
     btn.textContent = 'Kirim rencana terbang';
-    btn.disabled = !polygonRing;
+    refreshFlightButton();
+  }
+};
+
+/* ---------- DRONE ---------- */
+function renderDrones() {
+  const p = state.profile;
+  $('d-pt').textContent = (p && p.pt) || '';
+  const list = (p && p.drones) || [];
+  $('droneList').innerHTML = list.length
+    ? list.map(function (d) { return '<div class="card">' + esc(d.label) + ' <small>(' + esc(d.year_mn) + ')</small></div>'; }).join('')
+    : '<div class="card">Belum ada drone terdaftar.</div>';
+}
+
+$('btnDrone').onclick = async function () {
+  const btn = $('btnDrone');
+  clearMsg('drone');
+  btn.disabled = true; btn.textContent = 'Mengirim...';
+  try {
+    const cert = await readPdf($('d-cert'));
+    const r = await api('registerUAV', {
+      manufacture: $('d-manu').value, dr_details: $('d-model').value,
+      year_mn: $('d-year').value, drone_sn: $('d-sn').value, cert_base64: cert
+    });
+    if (!r.ok) throw new Error(r.error);
+    state.profile = r.profile;
+    ['d-manu', 'd-model', 'd-year', 'd-sn', 'd-cert'].forEach(function (id) { $(id).value = ''; });
+    renderDrones();
+    showMsg('drone', '✔ Drone berhasil didaftarkan.', true);
+  } catch (err) {
+    if (err.message !== 'Sesi habis') showMsg('drone', '✖ ' + err.message, false);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Daftarkan drone';
+  }
+};
+
+/* ---------- PROFIL PILOT ---------- */
+async function loadCompanies() {
+  try {
+    const r = await api('companies');
+    if (r.ok) $('companyList').innerHTML = r.companies.map(function (c) { return '<option value="' + esc(c) + '">'; }).join('');
+  } catch (e) { /* daftar saran saja, boleh gagal */ }
+}
+
+function renderProfile() {
+  const p = state.profile;
+  if (p && p.registered) {
+    $('profileStatus').innerHTML = '<div class="card">Terdaftar sebagai <b>' + esc(p.nama) + '</b> (' + esc(p.pt) +
+      ')<br>Sertifikat berlaku sampai: <b>' + esc(p.valid_until) + '</b>' +
+      (p.expired ? ' <span style="color:#b00020">— KEDALUWARSA</span>' : '') +
+      '<br><small>Untuk memperbarui, isi ulang formulir di bawah dengan sertifikat terbaru.</small></div>';
+    $('p-nama').value = p.nama; $('p-pt').value = p.pt;
+    $('btnPilot').textContent = 'Perbarui data pilot';
+  } else {
+    $('profileStatus').innerHTML = '';
+    if (!$('p-nama').value && state.user) $('p-nama').value = state.user.name;
+    $('btnPilot').textContent = 'Daftar sebagai pilot';
+  }
+}
+
+$('btnPilot').onclick = async function () {
+  const btn = $('btnPilot');
+  const label = btn.textContent;
+  clearMsg('profile');
+  btn.disabled = true; btn.textContent = 'Mengirim...';
+  try {
+    const cert = await readPdf($('p-cert'));
+    const r = await api('registerPilot', {
+      nama: $('p-nama').value, pt: $('p-pt').value,
+      valid_until: $('p-valid').value, cert_base64: cert
+    });
+    if (!r.ok) throw new Error(r.error);
+    state.profile = r.profile;
+    $('p-cert').value = '';
+    renderProfile();
+    showMsg('profile', '✔ Data pilot tersimpan.', true);
+  } catch (err) {
+    if (err.message !== 'Sesi habis') showMsg('profile', '✖ ' + err.message, false);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = (state.profile && state.profile.registered) ? 'Perbarui data pilot' : label;
   }
 };
 </script>
