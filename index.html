@@ -12,24 +12,39 @@
   header { padding:8px 12px; background:#1a3a5c; color:#fff; display:flex;
            align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
   header h1 { font-size:16px; margin:0; }
-  #userBox { font-size:13px; }
-  #map { flex:1; }
-  #info { padding:8px 12px; background:#f4f4f4; font-size:14px; }
-  button { padding:6px 12px; border:0; border-radius:6px; background:#4285f4;
-           color:#fff; cursor:pointer; }
+  #userName { font-size:13px; }
+  #map { flex:1; min-height:240px; }
+  #panel { background:#f4f4f4; padding:8px 12px; max-height:45vh; overflow:auto; font-size:14px; }
+  #form { display:none; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; }
+  #form label { display:flex; flex-direction:column; font-size:12px; color:#444; }
+  #form input { padding:6px; font-size:14px; border:1px solid #bbb; border-radius:6px; }
+  #form .full { grid-column:1 / -1; }
+  button { padding:8px 14px; border:0; border-radius:6px; background:#4285f4; color:#fff; cursor:pointer; font-size:14px; }
+  button:disabled { background:#9bb7ea; cursor:not-allowed; }
+  #msg { margin-top:8px; padding:8px; border-radius:6px; display:none; }
+  #msg.ok  { display:block; background:#e8ffe8; color:#17652a; }
+  #msg.err { display:block; background:#ffe8e8; color:#8a1f1f; }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
     <h1>UAV Flight Plan</h1>
-    <div id="userBox">
-      <div id="gbtn"></div>
-      <span id="userName"></span>
-    </div>
+    <div><div id="gbtn"></div><span id="userName"></span></div>
   </header>
   <div id="map"></div>
-  <div id="info">Login dulu, lalu gambar area terbang di peta.</div>
+  <div id="panel">
+    <div id="info">Login dulu, lalu gambar area terbang di peta.</div>
+    <div id="form">
+      <label class="full">Perusahaan <input id="pt" maxlength="150"></label>
+      <label class="full">Drone (model) <input id="drone" maxlength="150"></label>
+      <label class="full">Tanggal <input id="fdate" type="date"></label>
+      <label>Jam mulai <input id="tstart" type="time"></label>
+      <label>Jam selesai <input id="tend" type="time"></label>
+      <button id="btnSubmit" class="full" disabled>Kirim rencana terbang</button>
+    </div>
+    <div id="msg"></div>
+  </div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -42,7 +57,18 @@ const API_URL   = 'https://script.google.com/macros/s/AKfycbzDW89h85pJSqWYkp1nQZ
 
 let idToken = sessionStorage.getItem('idToken');
 let currentLayer = null;
-let polygonGeoJSON = null;
+let polygonRing = null;
+
+const $ = id => document.getElementById(id);
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function showMsg(text, ok) {
+  const m = $('msg');
+  m.className = ok ? 'ok' : 'err';
+  m.textContent = text;
+}
 
 /* ---------- API ---------- */
 async function api(action, data) {
@@ -57,38 +83,39 @@ async function api(action, data) {
 /* ---------- LOGIN ---------- */
 function initGoogle() {
   google.accounts.id.initialize({ client_id: CLIENT_ID, callback: onLogin });
-  google.accounts.id.renderButton(document.getElementById('gbtn'),
-    { theme: 'filled_blue', size: 'medium', text: 'signin_with' });
+  google.accounts.id.renderButton($('gbtn'), { theme: 'filled_blue', size: 'medium', text: 'signin_with' });
   if (idToken) checkUser();
 }
-
 function onLogin(resp) {
   idToken = resp.credential;
   sessionStorage.setItem('idToken', idToken);
   checkUser();
 }
-
+function logout(message) {
+  idToken = null;
+  sessionStorage.removeItem('idToken');
+  $('gbtn').style.display = '';
+  $('userName').textContent = '';
+  $('form').style.display = 'none';
+  if (message) $('info').textContent = message;
+}
 async function checkUser() {
   try {
     const r = await api('whoami');
-    if (r.ok) {
-      document.getElementById('gbtn').style.display = 'none';
-      document.getElementById('userName').textContent = 'Halo, ' + r.user.name;
-    } else {
-      throw new Error(r.error);
-    }
+    if (!r.ok) throw new Error(r.error);
+    $('gbtn').style.display = 'none';
+    $('userName').textContent = 'Halo, ' + r.user.name;
+    $('form').style.display = 'grid';
+    $('fdate').min = new Date().toLocaleDateString('sv-SE');
+    updatePolygon();
+    loadFlights();
   } catch (err) {
-    idToken = null;
-    sessionStorage.removeItem('idToken');
-    document.getElementById('gbtn').style.display = '';
-    document.getElementById('userName').textContent = '';
-    document.getElementById('info').textContent = 'Login gagal: ' + err.message;
+    logout('Login gagal: ' + err.message);
   }
 }
 
 /* ---------- PETA ---------- */
 const map = L.map('map').setView([-2.5, 118], 5);
-
 const satelit = L.tileLayer(
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
   { maxZoom: 19, attribution: 'Tiles &copy; Esri' }).addTo(map);
@@ -96,7 +123,6 @@ const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
   { maxZoom: 19, attribution: '&copy; OpenStreetMap' });
 L.control.layers({ 'Satelit': satelit, 'Peta jalan': osm }).addTo(map);
 
-// Tombol lokasi saya
 const locBtn = L.control({ position: 'topright' });
 locBtn.onAdd = function () {
   const b = L.DomUtil.create('button');
@@ -106,6 +132,28 @@ locBtn.onAdd = function () {
   return b;
 };
 locBtn.addTo(map);
+
+/* ---------- PENERBANGAN LAIN (oranye) ---------- */
+const flightsLayer = L.geoJSON(null, {
+  pmIgnore: true,
+  style: { color: '#ff8c00', weight: 2, fillOpacity: 0.25 },
+  onEachFeature: function (f, layer) {
+    const p = f.properties;
+    layer.bindPopup('<b>' + esc(p.nama) + '</b><br>' + esc(p.pt) + '<br>' + esc(p.dr_details) +
+      '<br>' + esc(p.flight_date) + ' ' + esc(p.t_start) + '–' + esc(p.t_end));
+  }
+}).addTo(map);
+
+async function loadFlights() {
+  try {
+    const r = await api('listFlights');
+    if (!r.ok) throw new Error(r.error);
+    flightsLayer.clearLayers();
+    flightsLayer.addData(r.geojson);
+  } catch (err) {
+    showMsg('Gagal memuat area terbang lain: ' + err.message, false);
+  }
+}
 
 /* ---------- GAMBAR POLIGON ---------- */
 map.pm.addControls({
@@ -118,23 +166,60 @@ map.pm.addControls({
 
 function updatePolygon() {
   if (!currentLayer) {
-    polygonGeoJSON = null;
-    document.getElementById('info').textContent = 'Belum ada area. Gambar poligon di peta.';
+    polygonRing = null;
+    $('btnSubmit').disabled = true;
+    $('info').textContent = idToken ? 'Belum ada area. Gambar poligon di peta.' : 'Login dulu, lalu gambar area terbang di peta.';
     return;
   }
-  polygonGeoJSON = currentLayer.toGeoJSON();
-  const n = polygonGeoJSON.geometry.coordinates[0].length - 1;
-  document.getElementById('info').textContent = 'Area terbang siap: ' + n + ' titik sudut.';
+  polygonRing = currentLayer.toGeoJSON().geometry.coordinates[0];
+  $('btnSubmit').disabled = false;
+  $('info').textContent = 'Area terbang siap: ' + (polygonRing.length - 1) + ' titik sudut. Lengkapi jadwal lalu kirim.';
 }
 
 map.on('pm:create', function (e) {
-  if (currentLayer) map.removeLayer(currentLayer);   // hanya satu poligon
+  if (currentLayer) map.removeLayer(currentLayer);
   currentLayer = e.layer;
   currentLayer.on('pm:edit', updatePolygon);
   currentLayer.on('pm:dragend', updatePolygon);
   currentLayer.on('pm:remove', function () { currentLayer = null; updatePolygon(); });
   updatePolygon();
 });
+
+/* ---------- KIRIM ---------- */
+$('btnSubmit').onclick = async function () {
+  const btn = $('btnSubmit');
+  const data = {
+    pt: $('pt').value.trim(), dr_details: $('drone').value.trim(),
+    flight_date: $('fdate').value, t_start: $('tstart').value, t_end: $('tend').value,
+    polygon: polygonRing
+  };
+  if (!data.pt || !data.dr_details || !data.flight_date || !data.t_start || !data.t_end) {
+    return showMsg('Lengkapi semua kolom dulu.', false);
+  }
+  btn.disabled = true;
+  btn.textContent = 'Mengirim...';
+  try {
+    const r = await api('submitFlight', data);
+    if (r.ok) {
+      showMsg('✔ Rencana terbang tersimpan.', true);
+      if (currentLayer) { map.removeLayer(currentLayer); currentLayer = null; }
+      updatePolygon();
+      loadFlights();
+    } else if (r.conflict) {
+      showMsg('✖ ' + r.error + ' ' + r.conflicts.join('; '), false);
+    } else if (/token|login/i.test(r.error || '')) {
+      logout('Sesi habis, silakan login lagi.');
+      showMsg('Sesi habis, silakan login lagi.', false);
+    } else {
+      showMsg('✖ ' + r.error, false);
+    }
+  } catch (err) {
+    showMsg('✖ Gagal terhubung: ' + err.message, false);
+  } finally {
+    btn.textContent = 'Kirim rencana terbang';
+    btn.disabled = !polygonRing;
+  }
+};
 </script>
 </body>
 </html>
