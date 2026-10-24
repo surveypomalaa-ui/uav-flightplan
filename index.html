@@ -105,6 +105,10 @@
   }
 
     #btnOpenForm { display:none !important; }
+
+    .mfchip { padding:5px 10px; border-radius:16px; border:2px solid #bbb; background:#fff; color:#222; font-size:13px; }
+  .mfchip.on { background:#1a3a5c; color:#fff; border-color:#1a3a5c; }
+  .badge { color:#fff; border-radius:10px; padding:2px 8px; font-size:12px; white-space:nowrap; }
 </style>
 </head>
 <body>
@@ -129,7 +133,8 @@
   </header>
 
   <div id="nav">
-    <button data-view="flight">🗺 Peta &amp; Jadwal</button>
+    <button data-view="All Flight">🗺 Peta &amp; Jadwal</button>
+    <button data-view="My Flight">📋 My Flight</button>
     <button data-view="drone">✈ Drone</button>
     <button data-view="profile">👤 Profil Pilot</button>
   </div>
@@ -154,6 +159,15 @@
          accept=".kml,.kmz,.dxf,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz,application/octet-stream">
 
   <div id="panel">
+
+        <!-- MY FLIGHT -->
+    <div class="view" id="view-myflight">
+      <h3>Rencana terbang saya</h3>
+      <small style="color:#555">Menampilkan 90 hari terakhir dan semua yang akan datang. Hanya rencana berstatus <b>Active plan</b> yang bisa diubah atau dihapus.</small>
+      <div id="mf-filter" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0"></div>
+      <div id="mf-list"></div>
+    </div>
+    
     <!-- DRONE -->
     <div class="view" id="view-drone">
       <h3>Drone terdaftar (<span id="d-pt"></span>)</h3>
@@ -189,7 +203,7 @@
 <!-- POPUP RENCANA TERBANG -->
 <div id="flightModal" class="modal-back">
   <div class="modal">
-    <div class="modal-head"><b>⠿ Rencana Terbang <small style="font-weight:normal;color:#777">(geser judul)</small></b>
+    <div class="modal-head"><b>⠿ <span id="m-title">Rencana Terbang</span> <small style="font-weight:normal;color:#777">(geser judul)</small></b>
       <span><button id="btnMinModal" class="x">▁</button><button id="btnCloseModal" class="x">✕</button></span></div>
     <div class="card" id="m-info"></div>
     <div id="flightWarn"></div>
@@ -253,6 +267,8 @@ const LABELS = { ongoing: 'Ongoing', planned: 'Active plan', ended: 'Ended' };
 let idToken = sessionStorage.getItem('idToken');
 let currentLayer = null;
 let polygonRing = null;
+let editingId = null;       // terisi saat mode ubah rencana terbang
+let focusLayer = null;
 const state = { view: 'login', user: null, profile: null, flights: null,
                 filters: { ongoing: true, planned: true, ended: false } };
 
@@ -326,6 +342,8 @@ function clampDrag() {                         // jaga agar judul tidak keluar l
 function openModal() {
   prepareFlightForm();
   clearMsg('flight');
+  $('m-title').textContent = editingId ? 'Ubah Rencana Terbang' : 'Rencana Terbang';
+  $('btnFlight').textContent = editingId ? 'Simpan perubahan' : 'Kirim rencana terbang';
   $('flightModal').classList.remove('min');
   $('btnMinModal').textContent = '▁';
   $('flightModal').style.display = 'flex';
@@ -335,8 +353,11 @@ function closeModal() {                          // menutup popup = membuang pol
   $('flightModal').style.display = 'none';
   const l = currentLayer;
   currentLayer = null;
+  editingId = null;
+  $('btnFlight').textContent = 'Kirim rencana terbang';
   if (l) map.removeLayer(l);
   updatePolygon();
+  renderFlights();                               // tampilkan lagi rencana asli bila batal ubah
 }
 $('btnCloseModal').onclick = closeModal;
 $('btnOpenForm').onclick = openModal;
@@ -374,6 +395,7 @@ function setView(v) {
   $('filterBar').style.display = mapMode ? 'flex' : 'none';
   if (!mapMode) closeModal();
   if (mapMode) setTimeout(function () { map.invalidateSize(); addVectorLayersOnce(); zoomToIupk(false); }, 120);
+  if (v === 'myflight') loadMyFlights();
   if (v === 'drone') renderDrones();
   if (v === 'profile') { renderProfile(); loadCompanies(); }
   if (v === 'flight') { prepareFlightForm(); loadFlights(); }
@@ -688,7 +710,9 @@ function renderFlights() {
   flightsLayer.clearLayers();
   flightsLayer.addData({
     type: 'FeatureCollection',
-    features: all.filter(function (f) { return state.filters[f.properties.status]; })
+    features: all.filter(function (f) {
+      return state.filters[f.properties.status] && !(editingId && f.properties.flight_id === editingId);
+    })
   });
 }
 
@@ -1087,13 +1111,41 @@ function prepareFlightForm() {
   refreshFlightButton();
 }
 
+function flightBtnLabel() { return editingId ? 'Simpan perubahan' : 'Kirim rencana terbang'; }
+
 $('btnFlight').onclick = async function () {
   const btn = $('btnFlight');
   clearMsg('flight');
+  if (currentLayer) polygonRing = currentLayer.toGeoJSON().geometry.coordinates[0];   // bentuk terbaru
   const data = {
     drone_id: $('f-drone').value, flight_date: $('f-date').value,
     t_start: $('f-start').value, t_end: $('f-end').value, polygon: polygonRing
   };
+  if (!data.drone_id || !data.flight_date || !data.t_start || !data.t_end) {
+    return showMsg('flight', 'Lengkapi semua kolom dulu.', false);
+  }
+  const isEdit = !!editingId;
+  if (isEdit) data.flight_id = editingId;
+  btn.disabled = true; btn.textContent = 'Mengirim...';
+  try {
+    const r = await api(isEdit ? 'updateFlight' : 'submitFlight', data);
+    if (r.ok) {
+      closeModal();
+      toast(isEdit ? '✔ Perubahan tersimpan.' : '✔ Rencana terbang tersimpan.', true);
+      loadFlights();
+      if (isEdit) setView('myflight');
+    } else if (r.conflict) {
+      showMsg('flight', '✖ ' + r.error + ' ' + r.conflicts.join('; '), false);
+    } else {
+      showMsg('flight', '✖ ' + r.error, false);
+    }
+  } catch (err) {
+    if (err.message !== 'Sesi habis') showMsg('flight', '✖ Gagal terhubung: ' + err.message, false);
+  } finally {
+    btn.textContent = flightBtnLabel();
+    refreshFlightButton();
+  }
+};
   if (!data.drone_id || !data.flight_date || !data.t_start || !data.t_end) {
     return showMsg('flight', 'Lengkapi semua kolom dulu.', false);
   }
@@ -1118,7 +1170,122 @@ $('btnFlight').onclick = async function () {
     refreshFlightButton();
   }
 };
+/* ====================== MY FLIGHT ====================== */
+let myFlights = [], mfFilter = 'all';
+const MF_ORDER = { ongoing: 0, planned: 1, ended: 2 };
 
+function ringOf_(g) {
+  if (!g) return null;
+  if (g.type === 'Polygon') return g.coordinates[0];
+  if (g.type === 'MultiPolygon') return g.coordinates[0][0];
+  return null;
+}
+
+async function loadMyFlights() {
+  $('mf-list').innerHTML = '<div class="card">Memuat...</div>';
+  try {
+    const r = await api('myFlights');
+    if (!r.ok) throw new Error(r.error);
+    myFlights = (r.geojson.features || []).map(function (f) {
+      const p = f.properties;
+      return { flight_id: p.flight_id, pt: p.pt, dr_details: p.dr_details, flight_date: p.flight_date,
+               t_start: p.t_start, t_end: p.t_end, status: p.status, ring: ringOf_(f.geometry) };
+    });
+    renderMyFlights();
+  } catch (err) {
+    if (err.message !== 'Sesi habis') $('mf-list').innerHTML = '<div class="warn">Gagal memuat: ' + esc(err.message) + '</div>';
+  }
+}
+
+function renderMyFlights() {
+  const counts = { all: myFlights.length, planned: 0, ongoing: 0, ended: 0 };
+  myFlights.forEach(function (f) { if (counts[f.status] !== undefined) counts[f.status]++; });
+  const tabs = [['all', 'Semua'], ['planned', 'Active plan'], ['ongoing', 'Ongoing'], ['ended', 'Ended']];
+  $('mf-filter').innerHTML = tabs.map(function (t) {
+    return '<button class="mfchip' + (mfFilter === t[0] ? ' on' : '') + '" data-k="' + t[0] + '">' + t[1] + ' (' + counts[t[0]] + ')</button>';
+  }).join('');
+
+  const rows = myFlights.filter(function (f) { return mfFilter === 'all' || f.status === mfFilter; })
+    .sort(function (a, b) {
+      if (MF_ORDER[a.status] !== MF_ORDER[b.status]) return MF_ORDER[a.status] - MF_ORDER[b.status];
+      const ka = a.flight_date + a.t_start, kb = b.flight_date + b.t_start;
+      return a.status === 'ended' ? (ka < kb ? 1 : -1) : (ka < kb ? -1 : 1);
+    });
+
+  $('mf-list').innerHTML = rows.length ? rows.map(function (f) {
+    const can = f.status === 'planned';
+    const id = esc(f.flight_id);
+    return '<div class="card">' +
+      '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center">' +
+        '<b>' + esc(f.flight_date) + ' · ' + esc(f.t_start) + '–' + esc(f.t_end) + '</b>' +
+        '<span class="badge" style="background:' + (COLORS[f.status] || '#888') + '">' + esc(LABELS[f.status] || f.status) + '</span></div>' +
+      '<div>' + esc(f.dr_details) + '</div><small>' + esc(f.pt) + '</small>' +
+      '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">' +
+        '<button data-act="view" data-id="' + id + '">🗺 Lihat</button>' +
+        (can ? '<button data-act="edit" data-id="' + id + '" style="background:#f9a825">✏ Ubah</button>' +
+               '<button data-act="del" data-id="' + id + '" style="background:#c62828">🗑 Hapus</button>'
+             : '<small style="color:#777;align-self:center">🔒 Terkunci (' + (f.status === 'ongoing' ? 'sedang berjalan' : 'sudah selesai') + ')</small>') +
+      '</div></div>';
+  }).join('') : '<div class="card">Belum ada rencana terbang.</div>';
+}
+
+$('mf-filter').onclick = function (e) {
+  const b = e.target.closest('button[data-k]');
+  if (!b) return;
+  mfFilter = b.dataset.k;
+  renderMyFlights();
+};
+$('mf-list').onclick = function (e) {
+  const b = e.target.closest('button[data-act]');
+  if (!b) return;
+  const f = myFlights.filter(function (x) { return x.flight_id === b.dataset.id; })[0];
+  if (!f) return;
+  if (b.dataset.act === 'view') focusFlight(f);
+  else if (b.dataset.act === 'edit') startEdit(f);
+  else if (b.dataset.act === 'del') deleteFlight(f);
+};
+
+function focusFlight(f) {                          // sorot area di peta selama 8 detik
+  if (!f.ring) return toast('Bentuk area tidak ditemukan', false);
+  setView('flight');
+  map.invalidateSize();
+  if (focusLayer) map.removeLayer(focusLayer);
+  focusLayer = L.polygon(f.ring.map(function (p) { return [p[1], p[0]]; }),
+    { color: '#00e5ff', weight: 5, fill: false, interactive: false, pmIgnore: true }).addTo(map);
+  map.fitBounds(focusLayer.getBounds(), { padding: [40, 40] });
+  setTimeout(function () { if (focusLayer) { map.removeLayer(focusLayer); focusLayer = null; } }, 8000);
+}
+
+function startEdit(f) {
+  if (!f.ring) return toast('Bentuk area tidak ditemukan', false);
+  setView('flight');
+  map.invalidateSize();
+  editingId = f.flight_id;                         // diset sebelum popup dibuka
+  const layer = L.polygon(f.ring.map(function (p) { return [p[1], p[0]]; }),
+    { color: '#3388ff', weight: 3, fillOpacity: 0.2 }).addTo(map);
+  adoptLayer(layer);                               // membuka popup (mode ubah)
+  $('f-date').value = f.flight_date;
+  $('f-start').value = f.t_start;
+  $('f-end').value = f.t_end;
+  const opt = Array.prototype.find.call($('f-drone').options, function (o) { return o.textContent === f.dr_details; });
+  if (opt) $('f-drone').value = opt.value;
+  try { layer.pm.enable(); } catch (e) {}          // titik sudut langsung bisa digeser
+  map.fitBounds(layer.getBounds(), { padding: [40, 40] });
+  renderFlights();                                 // sembunyikan rencana asli dari layer oranye
+}
+
+async function deleteFlight(f) {
+  if (!confirm('Hapus rencana terbang ' + f.flight_date + ' ' + f.t_start + '–' + f.t_end + '?\nTindakan ini tidak bisa dibatalkan.')) return;
+  try {
+    const r = await api('deleteFlight', { flight_id: f.flight_id });
+    if (!r.ok) throw new Error(r.error);
+    toast('✔ Rencana terbang dihapus.', true);
+    loadMyFlights();
+    loadFlights();
+  } catch (err) {
+    if (err.message !== 'Sesi habis') toast('✖ ' + err.message, false);
+  }
+}
 /* ---------- DRONE ---------- */
 function renderDrones() {
   const p = state.profile;
