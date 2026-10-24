@@ -128,10 +128,15 @@
 
   <div id="map"></div>
 
-  <div id="mapBar">
+    <div id="mapBar">
     <span id="info">Gambar poligon area terbang di peta.</span>
-    <button id="btnOpenForm" style="display:none">Isi jadwal</button>
+    <span style="display:flex;gap:6px;flex-shrink:0">
+      <button id="btnImport" style="background:#5b7a99">📂 Import</button>
+      <button id="btnOpenForm" style="display:none">Isi jadwal</button>
+    </span>
   </div>
+  <input type="file" id="fileImport" style="display:none"
+         accept=".kml,.kmz,.dxf,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz,application/octet-stream">
 
   <div id="panel">
     <!-- DRONE -->
@@ -184,6 +189,23 @@
   </div>
 </div>
 
+<!-- POPUP IMPORT -->
+<div id="importModal" class="modal-back">
+  <div class="modal">
+    <div class="modal-head"><b>Import area dari file</b><button id="btnCloseImport" class="x">✕</button></div>
+    <div id="imp-file" class="card"></div>
+    <div id="imp-crs" style="display:none">
+      <div class="form">
+        <label class="full">Sistem koordinat file DXF
+          <select id="imp-crs-sel"></select></label>
+      </div>
+      <small style="color:#555">DXF tidak menyimpan sistem koordinat, jadi pilih yang sesuai file Anda. Pomalaa/Kolaka umumnya UTM zona 51 Selatan.</small>
+    </div>
+    <div id="imp-list"></div>
+    <div class="msg" id="msg-import"></div>
+  </div>
+</div>
+  
 <div id="toast"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -192,6 +214,7 @@
 <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.20/leaflet-maplibre-gl.js"></script>
 <script src="https://unpkg.com/esri-leaflet-vector@4.2.4/dist/esri-leaflet-vector.js"></script>
 <script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="initGoogle()"></script>
 
 <script>
@@ -651,15 +674,314 @@ function updatePolygon() {
   }
   refreshFlightButton();
 }
-map.on('pm:create', function (e) {
+function adoptLayer(layer) {                 // dipakai hasil gambar maupun hasil import
   if (currentLayer) map.removeLayer(currentLayer);
-  currentLayer = e.layer;
+  currentLayer = layer;
   currentLayer.on('pm:edit', updatePolygon);
   currentLayer.on('pm:dragend', updatePolygon);
   currentLayer.on('pm:remove', function () { currentLayer = null; updatePolygon(); closeModal(); });
   updatePolygon();
-  openModal();                                  // popup muncul setelah poligon selesai
-});
+  openModal();
+}
+map.on('pm:create', function (e) { adoptLayer(e.layer); });
+
+/* ====================== IMPORT KML / KMZ / DXF ====================== */
+let imp = { cands: [], file: '', kind: 'll', bulge: false };
+
+function samePt_(a, b) { return a[0] === b[0] && a[1] === b[1]; }
+function dedupe_(r) {
+  const o = [];
+  r.forEach(function (p) { const q = o[o.length - 1]; if (!q || !samePt_(q, p)) o.push(p); });
+  return o;
+}
+function closeRing_(r) { return samePt_(r[0], r[r.length - 1]) ? r : r.concat([[r[0][0], r[0][1]]]); }
+
+function mkCand_(name, pts, kind, closed) {
+  pts = dedupe_(pts.filter(function (p) { return isFinite(p[0]) && isFinite(p[1]); }));
+  if (pts.length > 1 && samePt_(pts[0], pts[pts.length - 1])) { pts.pop(); closed = true; }
+  if (pts.length < 3) return null;
+  return { name: name, coords: pts, open: !closed, kind: kind };
+}
+
+/* ---------- KML ---------- */
+function parseKml_(xmlText) {
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length) throw new Error('File KML tidak valid (XML rusak)');
+  const out = [];
+  function nameOf(el) {
+    let n = el.parentNode;
+    while (n && n.nodeType === 1) {
+      if (n.localName === 'Placemark') {
+        for (let c = n.firstElementChild; c; c = c.nextElementSibling) {
+          if (c.localName === 'name') return c.textContent.trim();
+        }
+        return '';
+      }
+      n = n.parentNode;
+    }
+    return '';
+  }
+  function coordsOf(el) {
+    const co = el.getElementsByTagNameNS('*', 'coordinates')[0];
+    if (!co) return [];
+    return co.textContent.trim().split(/\s+/).map(function (s) { return s.split(','); })
+      .filter(function (p) { return p.length >= 2; })
+      .map(function (p) { return [parseFloat(p[0]), parseFloat(p[1])]; });
+  }
+  Array.from(doc.getElementsByTagNameNS('*', 'Polygon')).forEach(function (pg) {
+    const ob = pg.getElementsByTagNameNS('*', 'outerBoundaryIs')[0];     // lubang (inner) diabaikan
+    const c = mkCand_(nameOf(pg) || 'Poligon', coordsOf(ob || pg), 'll', true);
+    if (c) out.push(c);
+  });
+  Array.from(doc.getElementsByTagNameNS('*', 'LineString')).forEach(function (ls) {
+    const c = mkCand_((nameOf(ls) || 'Garis'), coordsOf(ls), 'll', false);
+    if (c) out.push(c);
+  });
+  return out;
+}
+
+/* ---------- DXF (LWPOLYLINE & POLYLINE) ---------- */
+function parseDxf_(text) {
+  if (/^AutoCAD Binary DXF/.test(text)) throw new Error('DXF biner tidak didukung. Simpan ulang sebagai DXF ASCII.');
+  const lines = text.split(/\r?\n/);
+  const ents = []; let cur = null;
+  for (let i = 0; i + 1 < lines.length; i += 2) {
+    const code = parseInt(lines[i].trim(), 10), val = lines[i + 1].trim();
+    if (code === 0) { cur = { t: val, d: [] }; ents.push(cur); }
+    else if (cur) cur.d.push([code, val]);
+  }
+  const cands = []; let bulge = false, section = '', pl = null;
+  function push(layer, pts, closed) {
+    const c = mkCand_(layer || 'Polyline', pts, 'dxf', closed);
+    if (c) cands.push(c);
+  }
+  ents.forEach(function (e) {
+    if (e.t === 'SECTION') { const n = e.d.filter(function (p) { return p[0] === 2; })[0]; section = n ? n[1] : ''; return; }
+    if (e.t === 'ENDSEC') { section = ''; return; }
+    if (section !== 'ENTITIES') return;
+
+    if (e.t === 'LWPOLYLINE') {
+      let layer = '', flags = 0, pts = [], v = null;
+      e.d.forEach(function (p) {
+        if (p[0] === 8) layer = p[1];
+        else if (p[0] === 70) flags = parseInt(p[1], 10) || 0;
+        else if (p[0] === 10) { v = [parseFloat(p[1]), NaN]; pts.push(v); }
+        else if (p[0] === 20 && v) v[1] = parseFloat(p[1]);
+        else if (p[0] === 42 && Math.abs(parseFloat(p[1])) > 1e-9) bulge = true;
+      });
+      push(layer, pts, !!(flags & 1));
+    } else if (e.t === 'POLYLINE') {
+      let layer = '', flags = 0;
+      e.d.forEach(function (p) {
+        if (p[0] === 8) layer = p[1];
+        else if (p[0] === 70) flags = parseInt(p[1], 10) || 0;
+      });
+      pl = { layer: layer, closed: !!(flags & 1), pts: [], skip: !!(flags & (16 | 64)) };   // mesh dilewati
+    } else if (e.t === 'VERTEX' && pl) {
+      let x = NaN, y = NaN, vf = 0;
+      e.d.forEach(function (p) {
+        if (p[0] === 10) x = parseFloat(p[1]);
+        else if (p[0] === 20) y = parseFloat(p[1]);
+        else if (p[0] === 70) vf = parseInt(p[1], 10) || 0;
+        else if (p[0] === 42 && Math.abs(parseFloat(p[1])) > 1e-9) bulge = true;
+      });
+      if (!(vf & 16) && !(vf & 128)) pl.pts.push([x, y]);
+    } else if (e.t === 'SEQEND' && pl) {
+      if (!pl.skip) push(pl.layer, pl.pts, pl.closed);
+      pl = null;
+    }
+  });
+  return { cands: cands, bulge: bulge };
+}
+
+/* ---------- UTM (WGS84) → lon/lat ---------- */
+function utmToLonLat(x, y, zone, south) {
+  const a = 6378137, f = 1 / 298.257223563, k0 = 0.9996;
+  const e2 = f * (2 - f), ep2 = e2 / (1 - e2);
+  const e1 = (1 - Math.sqrt(1 - e2)) / (1 + Math.sqrt(1 - e2));
+  const xx = x - 500000, yy = south ? y - 10000000 : y;
+  const M = yy / k0;
+  const mu = M / (a * (1 - e2 / 4 - 3 * e2 * e2 / 64 - 5 * e2 * e2 * e2 / 256));
+  const phi1 = mu + (3 * e1 / 2 - 27 * Math.pow(e1, 3) / 32) * Math.sin(2 * mu)
+             + (21 * e1 * e1 / 16 - 55 * Math.pow(e1, 4) / 32) * Math.sin(4 * mu)
+             + (151 * Math.pow(e1, 3) / 96) * Math.sin(6 * mu)
+             + (1097 * Math.pow(e1, 4) / 512) * Math.sin(8 * mu);
+  const s = Math.sin(phi1), c = Math.cos(phi1), t = Math.tan(phi1);
+  const C1 = ep2 * c * c, T1 = t * t;
+  const N1 = a / Math.sqrt(1 - e2 * s * s);
+  const R1 = a * (1 - e2) / Math.pow(1 - e2 * s * s, 1.5);
+  const D = xx / (N1 * k0);
+  const lat = phi1 - (N1 * t / R1) * (D * D / 2
+            - (5 + 3 * T1 + 10 * C1 - 4 * C1 * C1 - 9 * ep2) * Math.pow(D, 4) / 24
+            + (61 + 90 * T1 + 298 * C1 + 45 * T1 * T1 - 252 * ep2 - 3 * C1 * C1) * Math.pow(D, 6) / 720);
+  const lon0 = ((zone - 1) * 6 - 180 + 3) * Math.PI / 180;
+  const lon = lon0 + (D - (1 + 2 * T1 + C1) * Math.pow(D, 3) / 6
+            + (5 - 2 * C1 + 28 * T1 - 3 * C1 * C1 + 8 * ep2 + 24 * T1 * T1) * Math.pow(D, 5) / 120) / c;
+  return [lon * 180 / Math.PI, lat * 180 / Math.PI];
+}
+
+function candToLonLat_(c, crs) {
+  const out = [];
+  for (let i = 0; i < c.coords.length; i++) {
+    const p = c.coords[i];
+    let ll;
+    if (c.kind === 'll' || crs === 'geo') ll = [p[0], p[1]];
+    else { const m = crs.split(':'); ll = utmToLonLat(p[0], p[1], parseInt(m[1], 10), m[2] === 'S'); }
+    if (!isFinite(ll[0]) || !isFinite(ll[1]) || Math.abs(ll[1]) > 90 || Math.abs(ll[0]) > 180) return null;
+    out.push(ll);
+  }
+  return out;
+}
+function inIndonesia_(ll) {
+  return ll.every(function (p) { return p[1] > -12 && p[1] < 7 && p[0] > 94 && p[0] < 142; });
+}
+function guessCrs_(cands) {
+  let minx = Infinity, maxx = -Infinity, miny = Infinity, maxy = -Infinity;
+  cands.forEach(function (c) { c.coords.forEach(function (p) {
+    minx = Math.min(minx, p[0]); maxx = Math.max(maxx, p[0]); miny = Math.min(miny, p[1]); maxy = Math.max(maxy, p[1]);
+  }); });
+  if (minx >= -180 && maxx <= 180 && miny >= -90 && maxy <= 90) return 'geo';
+  return 'utm:51:' + (miny > 5000000 ? 'S' : 'N');
+}
+
+/* ---------- penyederhanaan (maks titik) ---------- */
+function segDist_(p, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy;
+  if (l2 === 0) return Math.hypot(p[0] - a[0], p[1] - a[1]);
+  let t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+}
+function dpIdx_(P, i0, i1, tol) {
+  const keep = new Uint8Array(P.length); keep[i0] = 1; keep[i1] = 1;
+  const stack = [[i0, i1]];
+  while (stack.length) {
+    const s = stack.pop(), a = s[0], b = s[1];
+    let md = -1, mi = -1;
+    for (let i = a + 1; i < b; i++) { const d = segDist_(P[i], P[a], P[b]); if (d > md) { md = d; mi = i; } }
+    if (md > tol) { keep[mi] = 1; stack.push([a, mi], [mi, b]); }
+  }
+  const out = []; for (let i = i0; i <= i1; i++) if (keep[i]) out.push(i);
+  return out;
+}
+function simplifyRing_(ring, maxPts) {            // ring tertutup
+  const n0 = ring.length - 1;
+  if (n0 <= maxPts) return { ring: ring, tol: 0 };
+  const kx = 111320 * Math.cos(ring[0][1] * Math.PI / 180), ky = 110540;
+  const Q = ring.map(function (c) { return [c[0] * kx, c[1] * ky]; });
+  let k = 1, md = -1;
+  for (let i = 1; i < n0; i++) { const d = Math.hypot(Q[i][0] - Q[0][0], Q[i][1] - Q[0][1]); if (d > md) { md = d; k = i; } }
+  const tols = [0.5, 1, 2, 5, 10, 20, 50, 100];
+  for (let t = 0; t < tols.length; t++) {
+    const idx = dpIdx_(Q, 0, k, tols[t]).concat(dpIdx_(Q, k, n0, tols[t]).slice(1));
+    if (idx.length - 1 <= maxPts) return { ring: idx.map(function (i) { return ring[i]; }), tol: tols[t] };
+  }
+  const step = Math.ceil(n0 / maxPts), out = [];
+  for (let i = 0; i < n0; i += step) out.push(ring[i]);
+  out.push(ring[0]);
+  return { ring: out, tol: 100 };
+}
+
+/* ---------- antarmuka import ---------- */
+(function () {
+  let h = '<option value="geo">Derajat (lon/lat, WGS84)</option>';
+  for (let z = 46; z <= 54; z++) h += '<option value="utm:' + z + ':S">UTM zona ' + z + ' Selatan (WGS84)</option>';
+  for (let z = 46; z <= 54; z++) h += '<option value="utm:' + z + ':N">UTM zona ' + z + ' Utara (WGS84)</option>';
+  $('imp-crs-sel').innerHTML = h;
+  $('imp-crs-sel').onchange = renderImportList_;
+})();
+
+function renderImportList_() {
+  const crs = $('imp-crs-sel').value;
+  const rows = imp.cands.map(function (c, i) {
+    const ll = candToLonLat_(c, crs);
+    const ok = !!ll && (c.kind !== 'dxf' || inIndonesia_(ll));
+    return { i: i, c: c, ok: ok, area: ok ? areaHa(closeRing_(ll)) : -1 };
+  }).sort(function (a, b) { return b.area - a.area; });
+  $('imp-list').innerHTML = rows.slice(0, 30).map(function (r) {
+    return '<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
+      '<div><b>' + esc(r.c.name) + '</b>' + (r.c.open ? ' <small>(garis terbuka, ditutup otomatis)</small>' : '') +
+      '<br><small>' + r.c.coords.length + ' titik · ' +
+      (r.ok ? 'luas ± ' + r.area.toFixed(1) + ' ha'
+            : '<span style="color:#b00020">koordinat di luar Indonesia, periksa sistem koordinat</span>') +
+      '</small></div><button data-i="' + r.i + '"' + (r.ok ? '' : ' disabled') + '>Pakai</button></div>';
+  }).join('') + (rows.length > 30 ? '<div class="card"><small>Menampilkan 30 terbesar dari ' + rows.length + ' bentuk.</small></div>' : '');
+}
+
+function openImportModal_() {
+  clearMsg('import');
+  $('imp-file').innerHTML = '📄 ' + esc(imp.file) + ' — ' + imp.cands.length + ' bentuk ditemukan' +
+    (imp.bulge ? '<br><small style="color:#8a6d00">⚠ File memuat busur (arc); diperlakukan sebagai garis lurus.</small>' : '');
+  $('imp-crs').style.display = imp.kind === 'dxf' ? 'block' : 'none';
+  if (imp.kind === 'dxf') $('imp-crs-sel').value = guessCrs_(imp.cands);
+  renderImportList_();
+  $('importModal').style.display = 'flex';
+}
+
+function useCandidate_(i) {                       // melempar error bila gagal
+  const c = imp.cands[i];
+  const ll = candToLonLat_(c, $('imp-crs-sel').value);
+  if (!ll) throw new Error('Koordinat tidak valid untuk sistem koordinat ini');
+  if (c.kind === 'dxf' && !inIndonesia_(ll)) throw new Error('Hasil konversi di luar Indonesia, ganti sistem koordinat');
+  const ring = closeRing_(dedupe_(ll));
+  if (ring.length < 4) throw new Error('Bentuk terlalu sedikit titik');
+  const orig = ring.length - 1;
+  const s = simplifyRing_(ring, 450);
+  const layer = L.polygon(s.ring.map(function (p) { return [p[1], p[0]]; }),
+                          { color: '#3388ff', weight: 3, fillOpacity: 0.2 }).addTo(map);
+  $('importModal').style.display = 'none';
+  adoptLayer(layer);
+  map.fitBounds(layer.getBounds(), { padding: [30, 30] });
+  $('m-info').textContent += ' · dari ' + imp.file +
+    (s.tol ? ' (disederhanakan dari ' + orig + ' titik, toleransi ' + s.tol + ' m)' : '');
+}
+
+async function handleImportFile_(file) {
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  if (file.size > 15 * 1024 * 1024) throw new Error('Ukuran file maksimal 15 MB');
+  let cands = [], kind = 'll', bulge = false;
+  if (ext === 'kml' || ext === 'kmz') {
+    let text;
+    if (ext === 'kmz') {
+      if (!window.JSZip) throw new Error('Library KMZ belum termuat, muat ulang halaman');
+      const zip = await JSZip.loadAsync(await file.arrayBuffer());
+      const entry = zip.file('doc.kml') || zip.file(/\.kml$/i)[0];
+      if (!entry) throw new Error('KMZ ini tidak berisi file KML');
+      text = await entry.async('string');
+    } else {
+      text = await file.text();
+    }
+    cands = parseKml_(text);
+  } else if (ext === 'dxf') {
+    const r = parseDxf_(await file.text());
+    cands = r.cands; kind = 'dxf'; bulge = r.bulge;
+  } else if (ext === 'dwg') {
+    throw new Error('DWG belum didukung. Simpan sebagai DXF dari AutoCAD atau QGIS, lalu import.');
+  } else {
+    throw new Error('Format tidak didukung. Gunakan .kml, .kmz, atau .dxf');
+  }
+  if (!cands.length) throw new Error('Tidak ada poligon atau garis tertutup yang bisa dipakai di file ini');
+  imp = { cands: cands, file: file.name, kind: kind, bulge: bulge };
+  if (kind === 'll' && cands.length === 1) { useCandidate_(0); return; }
+  openImportModal_();
+}
+
+$('btnImport').onclick = function () { $('fileImport').click(); };
+$('fileImport').onchange = async function () {
+  const f = this.files[0];
+  this.value = '';
+  if (!f) return;
+  try { await handleImportFile_(f); }
+  catch (err) { toast('✖ ' + err.message, false); }
+};
+$('imp-list').onclick = function (e) {
+  const b = e.target.closest('button[data-i]');
+  if (!b) return;
+  try { useCandidate_(parseInt(b.dataset.i, 10)); }
+  catch (err) { showMsg('import', '✖ ' + err.message, false); }
+};
+$('btnCloseImport').onclick = function () { $('importModal').style.display = 'none'; };
+$('importModal').addEventListener('click', function (e) { if (e.target === this) this.style.display = 'none'; });
 
 /* ---------- FORM RENCANA TERBANG ---------- */
 function flightBlockedReason() {
