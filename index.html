@@ -90,6 +90,19 @@
   /* pin lokasi */
   .loc-pin { font-size:30px; line-height:30px; text-align:center; filter:drop-shadow(0 2px 2px rgba(0,0,0,.5)); }
   .leaflet-gl-layer { position:absolute; left:0; top:0; pointer-events:none; z-index:450; }
+
+    /* popup rencana terbang: jendela mengambang yang bisa digeser */
+  #flightModal { background:transparent; pointer-events:none; }
+  #flightModal .modal { pointer-events:auto; width:calc(100% - 16px); margin:0 8px 8px; border-radius:14px;
+                        max-height:70vh; box-shadow:0 6px 28px rgba(0,0,0,.45); }
+  #flightModal .modal-head { cursor:grab; touch-action:none; user-select:none; -webkit-user-select:none; }
+  #flightModal .modal-head:active { cursor:grabbing; }
+  #flightModal .modal-head span { display:flex; gap:6px; }
+  #flightModal.min .modal > :not(.modal-head) { display:none; }
+  @media (min-width:600px) {
+    #flightModal { align-items:flex-end; justify-content:flex-end; }
+    #flightModal .modal { width:440px; margin:0 16px 60px 0; }
+  }
 </style>
 </head>
 <body>
@@ -174,7 +187,8 @@
 <!-- POPUP RENCANA TERBANG -->
 <div id="flightModal" class="modal-back">
   <div class="modal">
-    <div class="modal-head"><b>Rencana Terbang</b><button id="btnCloseModal" class="x">✕</button></div>
+    <div class="modal-head"><b>⠿ Rencana Terbang <small style="font-weight:normal;color:#777">(geser judul)</small></b>
+      <span><button id="btnMinModal" class="x">▁</button><button id="btnCloseModal" class="x">✕</button></span></div>
     <div class="card" id="m-info"></div>
     <div id="flightWarn"></div>
     <div class="form">
@@ -291,15 +305,55 @@ function readPdf(inputEl) {
 }
 
 /* ---------- POPUP FORM ---------- */
+const flightWin = document.querySelector('#flightModal .modal');
+const flightHead = document.querySelector('#flightModal .modal-head');
+let dragX = 0, dragY = 0, dragStart = null;
+
+function applyDrag() { flightWin.style.transform = 'translate(' + dragX + 'px,' + dragY + 'px)'; }
+function clampDrag() {                         // jaga agar judul tidak keluar layar
+  if ($('flightModal').style.display !== 'flex') return;
+  const r = flightWin.getBoundingClientRect();
+  const W = window.innerWidth, H = window.innerHeight;
+  if (r.top < 0) dragY -= r.top;
+  if (r.top > H - 48) dragY -= r.top - (H - 48);
+  if (r.right < 80) dragX += 80 - r.right;
+  if (r.left > W - 80) dragX -= r.left - (W - 80);
+  applyDrag();
+}
+
 function openModal() {
   prepareFlightForm();
   clearMsg('flight');
+  $('flightModal').classList.remove('min');
+  $('btnMinModal').textContent = '▁';
   $('flightModal').style.display = 'flex';
+  clampDrag();
 }
 function closeModal() { $('flightModal').style.display = 'none'; }
 $('btnCloseModal').onclick = closeModal;
 $('btnOpenForm').onclick = openModal;
-$('flightModal').addEventListener('click', function (e) { if (e.target === this) closeModal(); });
+$('btnMinModal').onclick = function () {
+  const m = $('flightModal');
+  m.classList.toggle('min');
+  this.textContent = m.classList.contains('min') ? '▢' : '▁';
+  clampDrag();
+};
+
+flightHead.addEventListener('pointerdown', function (e) {
+  if (e.target.closest('button')) return;
+  dragStart = { x: e.clientX, y: e.clientY, dx: dragX, dy: dragY };
+  flightHead.setPointerCapture(e.pointerId);
+});
+flightHead.addEventListener('pointermove', function (e) {
+  if (!dragStart) return;
+  dragX = dragStart.dx + (e.clientX - dragStart.x);
+  dragY = dragStart.dy + (e.clientY - dragStart.y);
+  clampDrag();
+});
+['pointerup', 'pointercancel'].forEach(function (t) {
+  flightHead.addEventListener(t, function () { dragStart = null; });
+});
+window.addEventListener('resize', clampDrag);
 
 /* ---------- TAMPILAN ---------- */
 function setView(v) {
