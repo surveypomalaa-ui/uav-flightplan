@@ -34,7 +34,7 @@
             padding:8px 12px; background:#f4f4f4; border-top:1px solid #ddd; font-size:14px; }
   #app.map-mode #mapBar { display:flex; }
 
-  /* panel untuk tab Drone & Profil */
+  /* panel untuk tab My Flight, Drone, Profil */
   #panel { background:#f4f4f4; padding:8px 12px; overflow:auto; font-size:14px; }
   #app.map-mode #panel { display:none; }
   #app:not(.map-mode) #map { display:none; }
@@ -69,7 +69,7 @@
   #app.login-mode header, #app.login-mode #nav, #app.login-mode #filterBar,
   #app.login-mode #map, #app.login-mode #panel, #app.login-mode #mapBar { display:none !important; }
 
-  /* popup form rencana terbang */
+  /* popup umum (import) */
   .modal-back { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none;
                 align-items:flex-end; justify-content:center; z-index:2000; }
   .modal { background:#fff; width:100%; max-width:480px; border-radius:14px 14px 0 0;
@@ -81,6 +81,19 @@
   .modal-head { display:flex; justify-content:space-between; align-items:center; font-size:16px; }
   .modal-head .x { background:#eee; color:#333; padding:4px 10px; }
 
+  /* popup rencana terbang: jendela mengambang yang bisa digeser */
+  #flightModal { background:transparent; pointer-events:none; }
+  #flightModal .modal { pointer-events:auto; width:calc(100% - 16px); margin:0 8px 8px; border-radius:14px;
+                        max-height:70vh; box-shadow:0 6px 28px rgba(0,0,0,.45); }
+  #flightModal .modal-head { cursor:grab; touch-action:none; user-select:none; -webkit-user-select:none; }
+  #flightModal .modal-head:active { cursor:grabbing; }
+  #flightModal .modal-head span.btns { display:flex; gap:6px; }
+  #flightModal.min .modal > :not(.modal-head) { display:none; }
+  @media (min-width:600px) {
+    #flightModal { align-items:flex-end; justify-content:flex-end; }
+    #flightModal .modal { width:440px; margin:0 16px 60px 0; }
+  }
+
   /* notifikasi */
   #toast { position:fixed; left:50%; transform:translateX(-50%); bottom:70px; z-index:3000;
            max-width:90%; padding:10px 14px; border-radius:8px; color:#fff; display:none;
@@ -89,24 +102,12 @@
 
   /* pin lokasi */
   .loc-pin { font-size:30px; line-height:30px; text-align:center; filter:drop-shadow(0 2px 2px rgba(0,0,0,.5)); }
+
+  /* layer vector tile (IUPK, POM Sheet) */
   .leaflet-gl-layer { position:absolute; left:0; top:0; pointer-events:none; z-index:450; }
 
-    /* popup rencana terbang: jendela mengambang yang bisa digeser */
-  #flightModal { background:transparent; pointer-events:none; }
-  #flightModal .modal { pointer-events:auto; width:calc(100% - 16px); margin:0 8px 8px; border-radius:14px;
-                        max-height:70vh; box-shadow:0 6px 28px rgba(0,0,0,.45); }
-  #flightModal .modal-head { cursor:grab; touch-action:none; user-select:none; -webkit-user-select:none; }
-  #flightModal .modal-head:active { cursor:grabbing; }
-  #flightModal .modal-head span { display:flex; gap:6px; }
-  #flightModal.min .modal > :not(.modal-head) { display:none; }
-  @media (min-width:600px) {
-    #flightModal { align-items:flex-end; justify-content:flex-end; }
-    #flightModal .modal { width:440px; margin:0 16px 60px 0; }
-  }
-
-    #btnOpenForm { display:none !important; }
-
-    .mfchip { padding:5px 10px; border-radius:16px; border:2px solid #bbb; background:#fff; color:#222; font-size:13px; }
+  /* My Flight */
+  .mfchip { padding:5px 10px; border-radius:16px; border:2px solid #bbb; background:#fff; color:#222; font-size:13px; }
   .mfchip.on { background:#1a3a5c; color:#fff; border-color:#1a3a5c; }
   .badge { color:#fff; border-radius:10px; padding:2px 8px; font-size:12px; white-space:nowrap; }
 </style>
@@ -133,8 +134,8 @@
   </header>
 
   <div id="nav">
-    <button data-view="All Flight">🗺 Peta &amp; Jadwal</button>
-    <button data-view="My Flight">📋 My Flight</button>
+    <button data-view="flight">🗺 Peta &amp; Jadwal</button>
+    <button data-view="myflight">📋 My Flight</button>
     <button data-view="drone">✈ Drone</button>
     <button data-view="profile">👤 Profil Pilot</button>
   </div>
@@ -148,26 +149,20 @@
 
   <div id="map"></div>
 
-    <div id="mapBar">
-    <span id="info">Gambar poligon area terbang di peta.</span>
-    <span style="display:flex;gap:6px;flex-shrink:0">
-      <button id="btnImport" style="background:#5b7a99">📂 Import</button>
-      <button id="btnOpenForm" style="display:none">Isi jadwal</button>
-    </span>
+  <div id="mapBar">
+    <span id="info">Gambar poligon area terbang di peta, atau import dari file.</span>
+    <button id="btnImport" style="background:#5b7a99;flex-shrink:0">📂 Import</button>
   </div>
-  <input type="file" id="fileImport" style="display:none"
-         accept=".kml,.kmz,.dxf,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz,application/octet-stream">
 
   <div id="panel">
-
-        <!-- MY FLIGHT -->
+    <!-- MY FLIGHT -->
     <div class="view" id="view-myflight">
       <h3>Rencana terbang saya</h3>
       <small style="color:#555">Menampilkan 90 hari terakhir dan semua yang akan datang. Hanya rencana berstatus <b>Active plan</b> yang bisa diubah atau dihapus.</small>
       <div id="mf-filter" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0"></div>
       <div id="mf-list"></div>
     </div>
-    
+
     <!-- DRONE -->
     <div class="view" id="view-drone">
       <h3>Drone terdaftar (<span id="d-pt"></span>)</h3>
@@ -200,11 +195,16 @@
   </div>
 </div>
 
+<input type="file" id="fileImport" style="display:none"
+       accept=".kml,.kmz,.dxf,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz,application/octet-stream">
+
 <!-- POPUP RENCANA TERBANG -->
 <div id="flightModal" class="modal-back">
   <div class="modal">
-    <div class="modal-head"><b>⠿ <span id="m-title">Rencana Terbang</span> <small style="font-weight:normal;color:#777">(geser judul)</small></b>
-      <span><button id="btnMinModal" class="x">▁</button><button id="btnCloseModal" class="x">✕</button></span></div>
+    <div class="modal-head">
+      <b>⠿ <span id="m-title">Rencana Terbang</span> <small style="font-weight:normal;color:#777">(geser judul)</small></b>
+      <span class="btns"><button id="btnMinModal" class="x">▁</button><button id="btnCloseModal" class="x">✕</button></span>
+    </div>
     <div class="card" id="m-info"></div>
     <div id="flightWarn"></div>
     <div class="form">
@@ -235,7 +235,7 @@
     <div class="msg" id="msg-import"></div>
   </div>
 </div>
-  
+
 <div id="toast"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -245,37 +245,46 @@
 <script src="https://unpkg.com/esri-leaflet-vector@4.2.4/dist/esri-leaflet-vector.js"></script>
 <script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://accounts.google.com/gsi/client" async defer onload="initGoogle()"></script>
 
 <script>
+/* =====================================================================
+   KONFIGURASI
+   ===================================================================== */
 const CLIENT_ID = '200371532629-ktdgi0s5n18kcklq46tsb7ler93p7rgu.apps.googleusercontent.com';
 const API_URL   = 'https://script.google.com/macros/s/AKfycbzDW89h85pJSqWYkp1nQZhbjsKWkGxtlClf72GsG15R_YxYt9oP4NajVyf5u1CbZ3KE/exec';
 
-/* ====== LAYER DARI ARCGIS ONLINE ======
-   Tambah/ubah daftar ini. url = alamat layer, diakhiri nomor layer (/0, /1, ...).
-   visible: true = langsung tampil saat peta dibuka.
-   Hanya layer yang dibagikan PUBLIK yang bisa dimuat dari sini. */
-const ARCGIS_LAYERS = [];
-
-/* ====== FOTO UDARA (kuartalan) ====== */
 const ORTHO_BASE = 'https://tiles.arcgis.com/tiles/sd07frZndnauMmJH/arcgis/rest/services/';
 const ORTHO_BOUNDS = [[-4.29, 121.61], [-4.15, 121.71]];   // area Pomalaa
-  
+
+const VT = {
+  iupk: 'https://vectortileservices.arcgis.com/sd07frZndnauMmJH/arcgis/rest/services/IUPK_VALE/VectorTileServer',
+  pom:  'https://vectortileservices.arcgis.com/sd07frZndnauMmJH/arcgis/rest/services/POM_SHEET/VectorTileServer'
+};
+const IUPK_LINE_WIDTH = 2;          // gaya asli layanan = 4
+const POM_LINE_COLOR  = '#ffe600';
+const POM_LINE_WIDTH  = 1.5;
+
 const COLORS = { ongoing: '#2e9e44', planned: '#ff8c00', ended: '#8a8a8a' };
 const LABELS = { ongoing: 'Ongoing', planned: 'Active plan', ended: 'Ended' };
 
+/* =====================================================================
+   STATE & HELPER
+   ===================================================================== */
 let idToken = sessionStorage.getItem('idToken');
-let currentLayer = null;
+let currentLayer = null;      // poligon yang sedang dibuat / diubah
 let polygonRing = null;
-let editingId = null;       // terisi saat mode ubah rencana terbang
+let editingId = null;         // terisi saat mode ubah rencana terbang
 let focusLayer = null;
+let iupkBounds = null, didInitialZoom = false, vtAdded = false;
+let iupkLayer = null, pomLayer = null;
+
 const state = { view: 'login', user: null, profile: null, flights: null,
                 filters: { ongoing: true, planned: true, ended: false } };
 
-const $ = id => document.getElementById(id);
+const $ = function (id) { return document.getElementById(id); };
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g,
-    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; });
 }
 function showMsg(view, text, ok) {
   const m = $('msg-' + view);
@@ -294,7 +303,9 @@ function toast(text, ok) {
   toastTimer = setTimeout(function () { t.style.display = 'none'; }, 4500);
 }
 
-/* ---------- API ---------- */
+/* =====================================================================
+   API
+   ===================================================================== */
 async function api(action, data) {
   const res = await fetch(API_URL, {
     method: 'POST',
@@ -322,7 +333,9 @@ function readPdf(inputEl) {
   });
 }
 
-/* ---------- POPUP FORM ---------- */
+/* =====================================================================
+   POPUP RENCANA TERBANG (mengambang, bisa digeser)
+   ===================================================================== */
 const flightWin = document.querySelector('#flightModal .modal');
 const flightHead = document.querySelector('#flightModal .modal-head');
 let dragX = 0, dragY = 0, dragStart = null;
@@ -360,14 +373,12 @@ function closeModal() {                          // menutup popup = membuang pol
   renderFlights();                               // tampilkan lagi rencana asli bila batal ubah
 }
 $('btnCloseModal').onclick = closeModal;
-$('btnOpenForm').onclick = openModal;
 $('btnMinModal').onclick = function () {
   const m = $('flightModal');
   m.classList.toggle('min');
   this.textContent = m.classList.contains('min') ? '▢' : '▁';
   clampDrag();
 };
-
 flightHead.addEventListener('pointerdown', function (e) {
   if (e.target.closest('button')) return;
   dragStart = { x: e.clientX, y: e.clientY, dx: dragX, dy: dragY };
@@ -384,7 +395,9 @@ flightHead.addEventListener('pointermove', function (e) {
 });
 window.addEventListener('resize', clampDrag);
 
-/* ---------- TAMPILAN ---------- */
+/* =====================================================================
+   PERPINDAHAN TAMPILAN
+   ===================================================================== */
 function setView(v) {
   state.view = v;
   document.querySelectorAll('.view').forEach(function (el) { el.classList.toggle('active', el.id === 'view-' + v); });
@@ -407,7 +420,9 @@ document.querySelectorAll('#nav button').forEach(function (b) {
   };
 });
 
-/* ---------- LOGIN ---------- */
+/* =====================================================================
+   LOGIN
+   ===================================================================== */
 function initGoogle() {
   google.accounts.id.initialize({ client_id: CLIENT_ID, callback: onLogin });
   google.accounts.id.renderButton($('gbtn'), { theme: 'filled_blue', size: 'large', text: 'signin_with' });
@@ -423,13 +438,12 @@ function logout(message) {
   sessionStorage.removeItem('idToken');
   state.user = null; state.profile = null; state.flights = null;
   didInitialZoom = false;
+  myFlights = [];
   flightsLayer.clearLayers();
-  if (currentLayer) { map.removeLayer(currentLayer); currentLayer = null; polygonRing = null; }
-  $('btnOpenForm').style.display = 'none';
   $('userName').textContent = '';
   $('btnLogout').style.display = 'none';
   $('nav').style.display = 'none';
-  setView('login');
+  setView('login');                              // juga menutup popup dan membuang poligon
   $('loginMsg').textContent = message || '';
 }
 $('btnLogout').onclick = function () { logout(); };
@@ -455,7 +469,9 @@ async function checkUser() {
   }
 }
 
-/* ---------- PETA ---------- */
+/* =====================================================================
+   PETA DASAR
+   ===================================================================== */
 const map = L.map('map').setView([-2.5, 118], 5);
 const satelit = L.tileLayer(
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -466,7 +482,7 @@ const topo = L.tileLayer(
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
   { maxZoom: 19, attribution: 'Tiles &copy; Esri' });
 
-/* ---------- LOKASI SAYA (dengan pin) ---------- */
+/* ---------- Lokasi saya (dengan pin) ---------- */
 let locMarker = null, locCircle = null;
 const locBtn = L.control({ position: 'topright' });
 locBtn.onAdd = function () {
@@ -500,32 +516,8 @@ map.on('locationerror', function (e) {
   toast('Lokasi tidak bisa diambil. Pastikan izin lokasi diaktifkan di browser. (' + e.message + ')', false);
 });
 
-/* ---------- LAYER ARCGIS ---------- */
-function popupFromProps(title, p) {
-  const keys = Object.keys(p || {}).filter(function (k) { return !/^(OBJECTID|GlobalID|Shape|FID)/i.test(k); }).slice(0, 8);
-  return '<b>' + esc(title) + '</b>' + keys.map(function (k) { return '<br>' + esc(k) + ': ' + esc(p[k]); }).join('');
-}
-
+/* ---------- Area terbang (rencana) ---------- */
 const overlays = {};
-if (window.L && L.esri) {
-  ARCGIS_LAYERS.forEach(function (cfg) {
-    const color = cfg.color || '#3388ff';
-    const lyr = L.esri.featureLayer({
-      url: cfg.url,
-      pmIgnore: true,
-      style: function () { return { color: color, weight: 2, fillOpacity: 0.2 }; },
-      pointToLayer: function (geo, latlng) {
-        return L.circleMarker(latlng, { radius: 5, color: color, fillOpacity: 0.8, pmIgnore: true });
-      }
-    });
-    lyr.bindPopup(function (layer) { return popupFromProps(cfg.name, layer.feature.properties); });
-    lyr.on('requesterror', function () { console.warn('Layer ArcGIS gagal dimuat:', cfg.name); });
-    overlays[cfg.name] = lyr;
-    if (cfg.visible) lyr.addTo(map);
-  });
-}
-
-/* ---------- PENERBANGAN + FILTER STATUS ---------- */
 const flightsLayer = L.geoJSON(null, {
   pmIgnore: true,
   style: function (f) {
@@ -545,6 +537,7 @@ overlays['Area terbang (rencana)'] = flightsLayer;
 
 const layersCtl = L.control.layers({ 'Satelit': satelit, 'Peta jalan': osm, 'Topografi': topo }, overlays).addTo(map);
 
+/* ---------- Foto udara kuartalan (otomatis ambil yang terbaru) ---------- */
 function orthoCandidates() {                       // dari kuartal depan, mundur 10 kuartal
   const d = new Date();
   let y = d.getFullYear(), q = Math.floor(d.getMonth() / 3) + 1;
@@ -583,14 +576,8 @@ async function loadOrtho() {
   if (!found.length) console.warn('Foto udara tidak ditemukan');
 }
 loadOrtho();
-/* ====== LAYER VECTOR TILE: IUPK (aktif) & POM SHEET (mati) ====== */
-const VT = {
-  iupk: 'https://vectortileservices.arcgis.com/sd07frZndnauMmJH/arcgis/rest/services/IUPK_VALE/VectorTileServer',
-  pom:  'https://vectortileservices.arcgis.com/sd07frZndnauMmJH/arcgis/rest/services/POM_SHEET/VectorTileServer'
-};
-let iupkLayer = null, pomLayer = null;
-let iupkBounds = null, didInitialZoom = false, vtAdded = false;
 
+/* ---------- Layer vector tile: IUPK (aktif) & POM Sheet (mati) ---------- */
 if (window.L && L.esri && L.esri.Vector) {
   try {
     iupkLayer = L.esri.Vector.vectorTileLayer(VT.iupk);
@@ -636,48 +623,6 @@ function zoomToIupk(force) {
 }
 loadIupkExtent();
 
-/* ---- Tipiskan garis IUPK ---- */
-const IUPK_LINE_FACTOR = 0.6;   // 1 = ketebalan asli; 0.6 = 40% lebih tipis; ubah sesukamu
-
-function scaleWidth_(v, f) {
-  if (v == null) return f;                                   // bawaan 1px
-  if (typeof v === 'number') return v * f;
-  if (v && Array.isArray(v.stops)) {                         // format lama {stops:[[zoom,lebar],...]}
-    const o = Object.assign({}, v);
-    o.stops = v.stops.map(function (s) { return [s[0], typeof s[1] === 'number' ? s[1] * f : s[1]]; });
-    return o;
-  }
-  if (Array.isArray(v) && v[0] === 'interpolate') {          // format ekspresi
-    const o = v.slice();
-    for (let i = 4; i < o.length; i += 2) if (typeof o[i] === 'number') o[i] = o[i] * f;
-    return o;
-  }
-  return null;                                               // bentuk lain: biarkan
-}
-
-function thinLines_(lyr, f) {
-  let tries = 0;
-  const timer = setInterval(function () {
-    tries++;
-    try {
-      const gl = lyr.getMaplibreMap && lyr.getMaplibreMap();
-      if (gl && gl.isStyleLoaded()) {
-        clearInterval(timer);
-        let n = 0;
-        (gl.getStyle().layers || []).forEach(function (l) {
-          if (l.type !== 'line') return;
-          const nv = scaleWidth_(gl.getPaintProperty(l.id, 'line-width'), f);
-          if (nv != null) { gl.setPaintProperty(l.id, 'line-width', nv); n++; }
-        });
-        console.info('Garis IUPK ditipiskan pada ' + n + ' layer style');
-        return;
-      }
-    } catch (e) { clearInterval(timer); console.warn('Gagal menipiskan garis:', e); return; }
-    if (tries > 40) { clearInterval(timer); console.warn('Style IUPK tidak siap, garis tidak ditipiskan'); }
-  }, 500);
-}
-if (iupkLayer) iupkLayer.on('add', function () { thinLines_(iupkLayer, IUPK_LINE_FACTOR); });
-  
 const iupkBtn = L.control({ position: 'topright' });
 iupkBtn.onAdd = function () {
   const b = L.DomUtil.create('button');
@@ -689,7 +634,49 @@ iupkBtn.onAdd = function () {
   return b;
 };
 iupkBtn.addTo(map);
-  
+
+/* ---------- Gaya layer vector tile ---------- */
+function whenStyleReady_(lyr, fn) {
+  let tries = 0;
+  const timer = setInterval(function () {
+    tries++;
+    try {
+      const gl = (lyr.getMaplibreMap && lyr.getMaplibreMap()) ||
+                 (lyr._maplibreGL && lyr._maplibreGL.getMaplibreMap && lyr._maplibreGL.getMaplibreMap());
+      if (gl && gl.isStyleLoaded()) { clearInterval(timer); fn(gl); return; }
+    } catch (e) { clearInterval(timer); console.warn('Gagal mengakses style:', e); return; }
+    if (tries > 40) { clearInterval(timer); console.warn('Style vector tile tidak siap'); }
+  }, 500);
+}
+
+function restyle_(lyr, label, fn) {
+  lyr.on('add', function () {
+    whenStyleReady_(lyr, function (gl) {
+      let n = 0;
+      (gl.getStyle().layers || []).forEach(function (l) { fn(gl, l); n++; });
+      console.info(label + ': gaya diterapkan pada ' + n + ' layer style');
+    });
+  });
+}
+
+if (iupkLayer) restyle_(iupkLayer, 'IUPK', function (gl, l) {
+  if (l.type === 'line') gl.setPaintProperty(l.id, 'line-width', IUPK_LINE_WIDTH);
+});
+
+if (pomLayer) restyle_(pomLayer, 'POM', function (gl, l) {
+  if (l.type === 'line') {
+    gl.setPaintProperty(l.id, 'line-color', POM_LINE_COLOR);
+    gl.setPaintProperty(l.id, 'line-width', POM_LINE_WIDTH);
+  } else if (l.type === 'symbol') {                        // label lembar peta
+    gl.setPaintProperty(l.id, 'text-color', '#ffffff');
+    gl.setPaintProperty(l.id, 'text-halo-color', '#000000');
+    gl.setPaintProperty(l.id, 'text-halo-width', 1.5);
+  }
+});
+
+/* =====================================================================
+   PENERBANGAN + FILTER STATUS
+   ===================================================================== */
 async function loadFlights() {
   try {
     const r = await api('listFlights');
@@ -726,8 +713,10 @@ document.querySelectorAll('.chip').forEach(function (c) {
 });
 setInterval(function () { if (idToken && state.view === 'flight') loadFlights(); }, 60000);
 
-/* ---------- GAMBAR POLIGON ---------- */
-try { map.pm.setLang('id'); } catch (e) {}      // label tombol alat gambar berbahasa Indonesia
+/* =====================================================================
+   GAMBAR POLIGON
+   ===================================================================== */
+try { map.pm.setLang('id'); } catch (e) {}
 map.pm.addControls({
   position: 'topleft',
   drawMarker: false, drawCircleMarker: false, drawPolyline: false,
@@ -749,19 +738,18 @@ function areaHa(ring) {                       // perkiraan luas (hektar)
 function updatePolygon() {
   if (!currentLayer) {
     polygonRing = null;
-    $('info').textContent = 'Gambar poligon area terbang di peta.';
-    $('btnOpenForm').style.display = 'none';
+    $('info').textContent = 'Gambar poligon area terbang di peta, atau import dari file.';
     $('m-info').textContent = '';
   } else {
     polygonRing = currentLayer.toGeoJSON().geometry.coordinates[0];
     const txt = (polygonRing.length - 1) + ' titik sudut, luas ± ' + areaHa(polygonRing).toFixed(1) + ' ha';
     $('info').textContent = 'Area terbang siap: ' + txt;
     $('m-info').textContent = 'Area terbang: ' + txt;
-    $('btnOpenForm').style.display = '';
   }
   refreshFlightButton();
 }
-function adoptLayer(layer) {                 // dipakai hasil gambar maupun hasil import
+
+function adoptLayer(layer) {                 // dipakai hasil gambar, import, maupun ubah
   if (currentLayer) map.removeLayer(currentLayer);
   currentLayer = layer;
   currentLayer.on('pm:edit', updatePolygon);
@@ -771,6 +759,7 @@ function adoptLayer(layer) {                 // dipakai hasil gambar maupun hasi
   openModal();
 }
 map.on('pm:create', function (e) { adoptLayer(e.layer); });
+
 /* Backspace = hapus titik terakhir saat menggambar */
 document.addEventListener('keydown', function (e) {
   if (e.key !== 'Backspace') return;
@@ -784,7 +773,9 @@ document.addEventListener('keydown', function (e) {
   }
 });
 
-/* ====================== IMPORT KML / KMZ / DXF ====================== */
+/* =====================================================================
+   IMPORT KML / KMZ / DXF
+   ===================================================================== */
 let imp = { cands: [], file: '', kind: 'll', bulge: false };
 
 function samePt_(a, b) { return a[0] === b[0] && a[1] === b[1]; }
@@ -940,7 +931,7 @@ function guessCrs_(cands) {
     minx = Math.min(minx, p[0]); maxx = Math.max(maxx, p[0]); miny = Math.min(miny, p[1]); maxy = Math.max(maxy, p[1]);
   }); });
   if (minx >= -180 && maxx <= 180 && miny >= -90 && maxy <= 90) return 'geo';
-  return 'utm:51:' + (miny > 5000000 ? 'S' : 'N');
+  return 'utm:51:' + (miny > 5000000 ? 'S' : 'N');   // northing > 5 juta = belahan selatan
 }
 
 /* ---------- penyederhanaan (maks titik) ---------- */
@@ -1082,7 +1073,9 @@ $('imp-list').onclick = function (e) {
 $('btnCloseImport').onclick = function () { $('importModal').style.display = 'none'; };
 $('importModal').addEventListener('click', function (e) { if (e.target === this) this.style.display = 'none'; });
 
-/* ---------- FORM RENCANA TERBANG ---------- */
+/* =====================================================================
+   FORM RENCANA TERBANG
+   ===================================================================== */
 function flightBlockedReason() {
   const p = state.profile;
   if (!p || !p.registered) return 'Anda belum terdaftar sebagai pilot (tab Profil Pilot).';
@@ -1146,31 +1139,10 @@ $('btnFlight').onclick = async function () {
     refreshFlightButton();
   }
 };
-  if (!data.drone_id || !data.flight_date || !data.t_start || !data.t_end) {
-    return showMsg('flight', 'Lengkapi semua kolom dulu.', false);
-  }
-  btn.disabled = true; btn.textContent = 'Mengirim...';
-  try {
-    const r = await api('submitFlight', data);
-    if (r.ok) {
-      closeModal();
-      if (currentLayer) { map.removeLayer(currentLayer); currentLayer = null; }
-      updatePolygon();
-      toast('✔ Rencana terbang tersimpan.', true);
-      loadFlights();
-    } else if (r.conflict) {
-      showMsg('flight', '✖ ' + r.error + ' ' + r.conflicts.join('; '), false);
-    } else {
-      showMsg('flight', '✖ ' + r.error, false);
-    }
-  } catch (err) {
-    if (err.message !== 'Sesi habis') showMsg('flight', '✖ Gagal terhubung: ' + err.message, false);
-  } finally {
-    btn.textContent = 'Kirim rencana terbang';
-    refreshFlightButton();
-  }
-};
-/* ====================== MY FLIGHT ====================== */
+
+/* =====================================================================
+   MY FLIGHT
+   ===================================================================== */
 let myFlights = [], mfFilter = 'all';
 const MF_ORDER = { ongoing: 0, planned: 1, ended: 2 };
 
@@ -1286,7 +1258,10 @@ async function deleteFlight(f) {
     if (err.message !== 'Sesi habis') toast('✖ ' + err.message, false);
   }
 }
-/* ---------- DRONE ---------- */
+
+/* =====================================================================
+   DRONE
+   ===================================================================== */
 function renderDrones() {
   const p = state.profile;
   $('d-pt').textContent = (p && p.pt) || '';
@@ -1318,7 +1293,9 @@ $('btnDrone').onclick = async function () {
   }
 };
 
-/* ---------- PROFIL PILOT ---------- */
+/* =====================================================================
+   PROFIL PILOT
+   ===================================================================== */
 async function loadCompanies() {
   try {
     const r = await api('companies');
@@ -1366,5 +1343,8 @@ $('btnPilot').onclick = async function () {
   }
 };
 </script>
+
+<!-- Login Google dimuat PALING AKHIR supaya initGoogle pasti sudah terdefinisi -->
+<script src="https://accounts.google.com/gsi/client" async defer onload="initGoogle()"></script>
 </body>
 </html>
