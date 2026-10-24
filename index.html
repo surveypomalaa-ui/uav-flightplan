@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#00807C">
-<title>UAV Flight Plan</title>
+<title>UAV Flight Monitoring</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.css">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css">
@@ -129,7 +129,7 @@
 
   <div id="landing">
     <div class="logo">🛩️</div>
-    <h1>UAV Flight Plan</h1>
+    <h1>UAV Flight Monitoring</h1>
     <p>Sistem pendaftaran rencana terbang drone. Masuk dengan akun Google untuk melanjutkan.</p>
     <div class="box">
       <div id="gbtn"></div>
@@ -138,10 +138,10 @@
   </div>
 
   <header>
-    <h1>UAV Flight Plan</h1>
+    <h1>UAV Flight Monitoring</h1>
     <div id="userBox">
       <span id="userName"></span>
-      <button id="btnLogout" style="display:none;padding:4px 10px;background:rgba(255,255,255,.2)">Keluar</button>
+      <button id="btnLogout" style="display:none;padding:4px 10px;background:rgba(255,0,0,.2)">Log Out</button>
     </div>
   </header>
 
@@ -168,7 +168,7 @@
   <div id="panel">
     <!-- MY FLIGHT -->
     <div class="view" id="view-myflight">
-      <h3>Rencana terbang saya</h3>
+      <h3>Flight Log</h3>
       <small style="color:#555">Menampilkan 90 hari terakhir dan semua yang akan datang. Hanya rencana berstatus <b>Active plan</b> yang bisa diubah atau dihapus.</small>
       <div id="mf-filter" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0"></div>
       <div id="mf-list"></div>
@@ -1200,7 +1200,7 @@ async function loadMyFlights() {
 function renderMyFlights() {
   const counts = { all: myFlights.length, planned: 0, ongoing: 0, ended: 0 };
   myFlights.forEach(function (f) { if (counts[f.status] !== undefined) counts[f.status]++; });
-  const tabs = [['all', 'Semua'], ['planned', 'Active plan'], ['ongoing', 'Ongoing'], ['ended', 'Ended']];
+  const tabs = [['all', 'All'], ['planned', 'Active Plan'], ['ongoing', 'Ongoing'], ['ended', 'Ended']];
   $('mf-filter').innerHTML = tabs.map(function (t) {
     return '<button class="mfchip' + (mfFilter === t[0] ? ' on' : '') + '" data-k="' + t[0] + '">' + t[1] + ' (' + counts[t[0]] + ')</button>';
   }).join('');
