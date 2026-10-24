@@ -6,6 +6,7 @@
 <title>UAV Flight Plan</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.css">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css">
 <style>
   html, body { height:100%; margin:0; font-family:Arial,sans-serif; }
   #app { display:flex; flex-direction:column; height:100%; }
@@ -88,6 +89,7 @@
 
   /* pin lokasi */
   .loc-pin { font-size:30px; line-height:30px; text-align:center; filter:drop-shadow(0 2px 2px rgba(0,0,0,.5)); }
+  .leaflet-gl-layer { pointer-events:none; z-index:450; }
 </style>
 </head>
 <body>
@@ -186,6 +188,9 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/esri-leaflet@3.0.10/dist/esri-leaflet.js"></script>
+<script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.20/leaflet-maplibre-gl.js"></script>
+<script src="https://unpkg.com/esri-leaflet-vector@4.2.4/dist/esri-leaflet-vector.js"></script>
 <script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="initGoogle()"></script>
 
@@ -283,7 +288,7 @@ function setView(v) {
   $('app').classList.toggle('login-mode', v === 'login');
   $('filterBar').style.display = mapMode ? 'flex' : 'none';
   if (!mapMode) closeModal();
-  if (mapMode) setTimeout(function () { map.invalidateSize(); }, 60);
+  if (mapMode) setTimeout(function () { map.invalidateSize(); addVectorLayersOnce(); zoomToIupk(false); }, 120);
   if (v === 'drone') renderDrones();
   if (v === 'profile') { renderProfile(); loadCompanies(); }
   if (v === 'flight') { prepareFlightForm(); loadFlights(); }
@@ -310,6 +315,7 @@ function logout(message) {
   idToken = null;
   sessionStorage.removeItem('idToken');
   state.user = null; state.profile = null; state.flights = null;
+  didInitialZoom = false;
   flightsLayer.clearLayers();
   if (currentLayer) { map.removeLayer(currentLayer); currentLayer = null; polygonRing = null; }
   $('btnOpenForm').style.display = 'none';
@@ -470,7 +476,71 @@ async function loadOrtho() {
   if (!found.length) console.warn('Foto udara tidak ditemukan');
 }
 loadOrtho();
+/* ====== LAYER VECTOR TILE: IUPK (aktif) & POM SHEET (mati) ====== */
+const VT = {
+  iupk: 'https://vectortileservices.arcgis.com/sd07frZndnauMmJH/arcgis/rest/services/IUPK_VALE/VectorTileServer',
+  pom:  'https://vectortileservices.arcgis.com/sd07frZndnauMmJH/arcgis/rest/services/POM_SHEET/VectorTileServer'
+};
+let iupkLayer = null, pomLayer = null;
+let iupkBounds = null, didInitialZoom = false, vtAdded = false;
 
+if (window.L && L.esri && L.esri.Vector) {
+  try {
+    iupkLayer = L.esri.Vector.vectorTileLayer(VT.iupk);
+    pomLayer  = L.esri.Vector.vectorTileLayer(VT.pom);
+    layersCtl.addOverlay(iupkLayer, 'IUPK Vale');
+    layersCtl.addOverlay(pomLayer, 'POM Sheet');
+  } catch (e) { console.warn('Layer vector tile gagal dibuat:', e); }
+} else {
+  console.warn('Library vector tile tidak termuat (L.esri.Vector tidak ada)');
+}
+
+// dipasang saat peta pertama kali terlihat (peta tersembunyi di halaman login)
+function addVectorLayersOnce() {
+  if (vtAdded || !iupkLayer) return;
+  vtAdded = true;
+  iupkLayer.addTo(map);            // IUPK langsung aktif; POM Sheet dinyalakan lewat kontrol layer
+}
+
+function mercToLatLng(x, y) { return L.Projection.SphericalMercator.unproject(L.point(x, y)); }
+
+async function loadIupkExtent() {
+  try {
+    const r = await fetch(VT.iupk + '?f=json');
+    const j = await r.json();
+    const e = j.fullExtent || j.initialExtent;
+    if (!e) return;
+    const wkid = (e.spatialReference && (e.spatialReference.latestWkid || e.spatialReference.wkid)) || 102100;
+    let sw, ne;
+    if (wkid === 4326) { sw = L.latLng(e.ymin, e.xmin); ne = L.latLng(e.ymax, e.xmax); }
+    else { sw = mercToLatLng(e.xmin, e.ymin); ne = mercToLatLng(e.xmax, e.ymax); }
+    if ((ne.lng - sw.lng) > 60) return;           // extent seluruh dunia → abaikan
+    iupkBounds = L.latLngBounds(sw, ne);
+    zoomToIupk(false);
+  } catch (err) { console.warn('Extent IUPK gagal dibaca:', err); }
+}
+
+function zoomToIupk(force) {
+  if (!iupkBounds) return;
+  if (state.view !== 'flight' || !$('map').offsetHeight) return;   // peta belum terlihat
+  if (didInitialZoom && !force) return;
+  didInitialZoom = true;
+  map.fitBounds(iupkBounds, { padding: [20, 20] });
+}
+loadIupkExtent();
+
+const iupkBtn = L.control({ position: 'topright' });
+iupkBtn.onAdd = function () {
+  const b = L.DomUtil.create('button');
+  b.textContent = '🎯 Area IUPK';
+  L.DomEvent.disableClickPropagation(b);
+  b.onclick = function () {
+    if (iupkBounds) zoomToIupk(true); else toast('Area IUPK belum terbaca', false);
+  };
+  return b;
+};
+iupkBtn.addTo(map);
+  
 async function loadFlights() {
   try {
     const r = await api('listFlights');
