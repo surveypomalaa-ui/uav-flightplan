@@ -197,12 +197,12 @@ const API_URL   = 'https://script.google.com/macros/s/AKfycbzDW89h85pJSqWYkp1nQZ
    Tambah/ubah daftar ini. url = alamat layer, diakhiri nomor layer (/0, /1, ...).
    visible: true = langsung tampil saat peta dibuka.
    Hanya layer yang dibagikan PUBLIK yang bisa dimuat dari sini. */
-const ARCGIS_LAYERS = [
-  { name: 'Grade Jalan',
-    url: 'https://services.arcgis.com/sd07frZndnauMmJH/arcgis/rest/services/Grade_Jalan_Colour_/FeatureServer/0',
-    color: '#e91e63', visible: false }
-];
+const ARCGIS_LAYERS = [];
 
+/* ====== FOTO UDARA (kuartalan) ====== */
+const ORTHO_BASE = 'https://tiles.arcgis.com/tiles/sd07frZndnauMmJH/arcgis/rest/services/';
+const ORTHO_BOUNDS = [[-4.29, 121.61], [-4.15, 121.71]];   // area Pomalaa
+  
 const COLORS = { ongoing: '#2e9e44', planned: '#ff8c00', ended: '#8a8a8a' };
 const LABELS = { ongoing: 'Ongoing', planned: 'Active plan', ended: 'Ended' };
 
@@ -430,7 +430,46 @@ const flightsLayer = L.geoJSON(null, {
 }).addTo(map);
 overlays['Area terbang (rencana)'] = flightsLayer;
 
-L.control.layers({ 'Satelit': satelit, 'Peta jalan': osm, 'Topografi': topo }, overlays).addTo(map);
+const layersCtl = L.control.layers({ 'Satelit': satelit, 'Peta jalan': osm, 'Topografi': topo }, overlays).addTo(map);
+
+function orthoCandidates() {                       // dari kuartal depan, mundur 10 kuartal
+  const d = new Date();
+  let y = d.getFullYear(), q = Math.floor(d.getMonth() / 3) + 1;
+  q += 1; if (q > 4) { q = 1; y++; }
+  const out = [];
+  for (let i = 0; i < 10; i++) {
+    out.push({ name: 'Q' + q + '_' + y, label: 'Q' + q + ' ' + y });
+    q--; if (q < 1) { q = 4; y--; }
+  }
+  return out;
+}
+
+function probeTile(name) {                         // cek satu tile contoh (zoom 13, area Pomalaa)
+  return new Promise(function (resolve) {
+    const img = new Image();
+    const t = setTimeout(function () { resolve(false); }, 8000);
+    img.onload  = function () { clearTimeout(t); resolve(true); };
+    img.onerror = function () { clearTimeout(t); resolve(false); };
+    img.src = ORTHO_BASE + name + '/MapServer/tile/13/4191/6864';
+  });
+}
+
+async function loadOrtho() {
+  const cands = orthoCandidates();
+  const ok = await Promise.all(cands.map(function (c) { return probeTile(c.name); }));
+  const found = cands.filter(function (c, i) { return ok[i]; });     // urut: terbaru → lama
+  found.forEach(function (c, i) {
+    const lyr = L.tileLayer(ORTHO_BASE + c.name + '/MapServer/tile/{z}/{y}/{x}', {
+      minZoom: 11, maxZoom: 19, minNativeZoom: 13, maxNativeZoom: 17,
+      bounds: ORTHO_BOUNDS, attribution: 'Foto udara ' + c.label,
+      zIndex: 10 + (found.length - i)
+    });
+    layersCtl.addOverlay(lyr, 'Foto Udara ' + c.label + (i === 0 ? ' (terbaru)' : ''));
+    if (i === 0) lyr.addTo(map);                                      // hanya yang terbaru aktif
+  });
+  if (!found.length) console.warn('Foto udara tidak ditemukan');
+}
+loadOrtho();
 
 async function loadFlights() {
   try {
