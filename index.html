@@ -3,41 +3,53 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#00807C">
 <title>UAV Flight Plan</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.css">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css">
 <style>
+  :root { --vale:#00807C; --vale-dark:#005F5C; --vale-deep:#00403E; --vale-yellow:#EEA722; }
   html, body { height:100%; margin:0; font-family:Arial,sans-serif; }
   #app { display:flex; flex-direction:column; height:100%; }
-  header { padding:8px 12px; background:#1a3a5c; color:#fff; display:flex;
+  header { padding:8px 12px; background:var(--vale); color:#fff; display:flex;
            align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
   header h1 { font-size:16px; margin:0; }
   #userBox { display:flex; align-items:center; gap:8px; font-size:13px; }
-  #nav { display:none; background:#12304d; padding:0 6px; overflow-x:auto; }
-  #nav button { background:none; border-radius:0; color:#cfe0f3; padding:10px 12px;
+  #nav { display:none; background:var(--vale-dark); padding:0 6px; overflow-x:auto; }
+  #nav button { background:none; border-radius:0; color:#d6efee; padding:10px 12px;
                 border-bottom:3px solid transparent; white-space:nowrap; }
-  #nav button.active { color:#fff; border-bottom-color:#4285f4; }
-  #filterBar { display:none; gap:6px; padding:6px 10px; background:#fff;
-               border-bottom:1px solid #ddd; flex-wrap:wrap; align-items:center; font-size:13px; }
-  .chip { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:16px;
-          border:2px solid; background:#fff; color:#222; cursor:pointer; font-size:13px; }
-  .chip i { width:10px; height:10px; border-radius:50%; display:inline-block; }
-  .chip.off { opacity:.45; }
-  .chip[data-status="ongoing"] { border-color:#2e9e44; } .chip[data-status="ongoing"] i { background:#2e9e44; }
-  .chip[data-status="planned"] { border-color:#ff8c00; } .chip[data-status="planned"] i { background:#ff8c00; }
-  .chip[data-status="ended"]   { border-color:#8a8a8a; } .chip[data-status="ended"] i   { background:#8a8a8a; }
-  #map { flex:1; min-height:200px; }
+  #nav button.active { color:#fff; border-bottom-color:var(--vale-yellow); }
+  #mapWrap { flex:1; position:relative; min-height:200px; }
+  #map { position:absolute; inset:0; }
 
-  /* bar kecil di bawah peta */
-  #mapBar { display:none; align-items:center; justify-content:space-between; gap:8px;
-            padding:8px 12px; background:#f4f4f4; border-top:1px solid #ddd; font-size:14px; }
-  #app.map-mode #mapBar { display:flex; }
+  /* panel status melayang (kiri atas, di kanan tombol zoom) */
+  #statusBox { position:absolute; left:56px; top:10px; z-index:800; background:rgba(255,255,255,.94);
+               border-radius:10px; padding:7px 10px 6px; box-shadow:0 2px 10px rgba(0,0,0,.25);
+               font-size:13px; line-height:1.2; min-width:128px; }
+  #statusBox b { display:block; font-size:12px; color:#444; margin-bottom:3px; }
+  #statusBox .st { display:flex; align-items:center; gap:7px; width:100%; background:none; color:#222;
+                   padding:4px 3px; border-radius:6px; text-align:left; font-size:13px; }
+  #statusBox .st:hover { background:#eef3f3; }
+  #statusBox .st i { width:11px; height:11px; border-radius:50%; flex-shrink:0; }
+  #statusBox .st span { margin-left:auto; padding-left:12px; font-weight:bold; color:#555; }
+  #statusBox .st.off { opacity:.4; }
+  #statusBox .st[data-status="ongoing"] i { background:#2e9e44; }
+  #statusBox .st[data-status="planned"] i { background:#ff8c00; }
+  #statusBox .st[data-status="ended"] i   { background:#8a8a8a; }
+
+  /* kotak info melayang (kiri bawah) */
+  #infoBox { position:absolute; left:10px; bottom:10px; z-index:800; background:rgba(255,255,255,.94);
+             border-radius:10px; padding:6px 10px; font-size:12.5px; color:#333; line-height:1.3;
+             max-width:min(300px, calc(100% - 20px)); box-shadow:0 2px 10px rgba(0,0,0,.25); pointer-events:none; }
+
+  /* tombol import (ikon) di toolbar kiri */
+  .import-ctl a { display:flex; align-items:center; justify-content:center; }
 
   /* panel untuk tab My Flight, Drone, Profil */
   #panel { background:#f4f4f4; padding:8px 12px; overflow:auto; font-size:14px; }
   #app.map-mode #panel { display:none; }
-  #app:not(.map-mode) #map { display:none; }
+  #app:not(.map-mode) #mapWrap { display:none; }
   #app:not(.map-mode) #panel { flex:1; }
   .view { display:none; } .view.active { display:block; }
 
@@ -45,8 +57,8 @@
   .form label { display:flex; flex-direction:column; font-size:12px; color:#444; }
   .form input, .form select { padding:7px; font-size:14px; border:1px solid #bbb; border-radius:6px; background:#fff; }
   .form .full { grid-column:1 / -1; }
-  button { padding:8px 14px; border:0; border-radius:6px; background:#4285f4; color:#fff; cursor:pointer; font-size:14px; }
-  button:disabled { background:#9bb7ea; cursor:not-allowed; }
+  button { padding:8px 14px; border:0; border-radius:6px; background:var(--vale); color:#fff; cursor:pointer; font-size:14px; }
+  button:disabled { background:#8cc3c1; cursor:not-allowed; }
   .msg { margin-top:8px; padding:8px; border-radius:6px; display:none; }
   .msg.ok  { display:block; background:#e8ffe8; color:#17652a; }
   .msg.err { display:block; background:#ffe8e8; color:#8a1f1f; }
@@ -57,17 +69,17 @@
   /* halaman login */
   #landing { display:none; flex:1; flex-direction:column; align-items:center; justify-content:center;
              text-align:center; padding:24px; color:#fff;
-             background:linear-gradient(160deg,#12304d,#1a3a5c 60%,#2b5c8a); }
+             background:linear-gradient(160deg,var(--vale-deep),var(--vale-dark) 55%,var(--vale)); }
   #landing .logo { font-size:56px; }
   #landing h1 { margin:8px 0 6px; font-size:26px; }
-  #landing p { margin:0 0 22px; color:#cfe0f3; max-width:340px; line-height:1.4; }
+  #landing p { margin:0 0 22px; color:#d6efee; max-width:340px; line-height:1.4; }
   #landing .box { background:#fff; color:#222; border-radius:12px; padding:20px 24px;
                   min-width:260px; box-shadow:0 8px 24px rgba(0,0,0,.25); }
   #gbtn { display:flex; justify-content:center; min-height:44px; }
   #loginMsg { margin-top:10px; font-size:13px; color:#555; min-height:16px; }
   #app.login-mode #landing { display:flex; }
-  #app.login-mode header, #app.login-mode #nav, #app.login-mode #filterBar,
-  #app.login-mode #map, #app.login-mode #panel, #app.login-mode #mapBar { display:none !important; }
+  #app.login-mode header, #app.login-mode #nav,
+  #app.login-mode #mapWrap, #app.login-mode #panel { display:none !important; }
 
   /* popup umum (import) */
   .modal-back { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none;
@@ -108,7 +120,7 @@
 
   /* My Flight */
   .mfchip { padding:5px 10px; border-radius:16px; border:2px solid #bbb; background:#fff; color:#222; font-size:13px; }
-  .mfchip.on { background:#1a3a5c; color:#fff; border-color:#1a3a5c; }
+  .mfchip.on { background:var(--vale-dark); color:#fff; border-color:var(--vale-dark); }
   .badge { color:#fff; border-radius:10px; padding:2px 8px; font-size:12px; white-space:nowrap; }
 </style>
 </head>
@@ -129,7 +141,7 @@
     <h1>UAV Flight Plan</h1>
     <div id="userBox">
       <span id="userName"></span>
-      <button id="btnLogout" style="display:none;padding:4px 10px;background:#5b7a99">Keluar</button>
+      <button id="btnLogout" style="display:none;padding:4px 10px;background:rgba(255,255,255,.2)">Keluar</button>
     </div>
   </header>
 
@@ -140,18 +152,17 @@
     <button data-view="profile">👤 Profil Pilot</button>
   </div>
 
-  <div id="filterBar">
-    <span>Tampilkan:</span>
-    <button class="chip" data-status="ongoing"><i></i>Ongoing <b id="cnt-ongoing">0</b></button>
-    <button class="chip" data-status="planned"><i></i>Active plan <b id="cnt-planned">0</b></button>
-    <button class="chip off" data-status="ended"><i></i>Ended <b id="cnt-ended">0</b></button>
-  </div>
+  <div id="mapWrap">
+    <div id="map"></div>
 
-  <div id="map"></div>
+    <div id="statusBox">
+      <b>Flight Status</b>
+      <button class="st" data-status="ongoing"><i></i>Ongoing <span id="cnt-ongoing">0</span></button>
+      <button class="st" data-status="planned"><i></i>Active plan <span id="cnt-planned">0</span></button>
+      <button class="st off" data-status="ended"><i></i>Ended <span id="cnt-ended">0</span></button>
+    </div>
 
-  <div id="mapBar">
-    <span id="info">Gambar poligon area terbang di peta, atau import dari file.</span>
-    <button id="btnImport" style="background:#5b7a99;flex-shrink:0">📂 Import</button>
+    <div id="infoBox"><span id="info">Gambar poligon area terbang di peta, atau import dari file.</span></div>
   </div>
 
   <div id="panel">
@@ -405,7 +416,6 @@ function setView(v) {
   const mapMode = (v === 'flight');
   $('app').classList.toggle('map-mode', mapMode);
   $('app').classList.toggle('login-mode', v === 'login');
-  $('filterBar').style.display = mapMode ? 'flex' : 'none';
   if (!mapMode) closeModal();
   if (mapMode) setTimeout(function () { map.invalidateSize(); addVectorLayersOnce(); zoomToIupk(false); }, 120);
   if (v === 'myflight') loadMyFlights();
@@ -522,8 +532,9 @@ const flightsLayer = L.geoJSON(null, {
   pmIgnore: true,
   style: function (f) {
     const p = f.properties;
-    return { color: COLORS[p.status] || '#888', weight: p.mine ? 4 : 2,
-             fillOpacity: p.status === 'ended' ? 0.1 : 0.25 };
+    const c = COLORS[p.status] || '#888';
+    return { color: c, weight: p.mine ? 4 : 2, fillColor: c,
+             fillOpacity: p.status === 'ongoing' ? 0.45 : (p.status === 'planned' ? 0.4 : 0.25) };
   },
   onEachFeature: function (f, layer) {
     const p = f.properties;
@@ -703,7 +714,7 @@ function renderFlights() {
   });
 }
 
-document.querySelectorAll('.chip').forEach(function (c) {
+document.querySelectorAll('#statusBox .st').forEach(function (c) {
   c.onclick = function () {
     const s = c.dataset.status;
     state.filters[s] = !state.filters[s];
@@ -724,6 +735,24 @@ map.pm.addControls({
   drawRectangle: true, drawPolygon: true,
   editMode: true, dragMode: true, removalMode: false
 });
+
+/* Tombol import (ikon saja) di bawah toolbar gambar */
+const importCtl = L.control({ position: 'topleft' });
+importCtl.onAdd = function () {
+  const div = L.DomUtil.create('div', 'leaflet-bar leaflet-control import-ctl');
+  const a = L.DomUtil.create('a', '', div);
+  a.href = '#';
+  a.title = 'Import KML / KMZ / DXF';
+  a.setAttribute('role', 'button');
+  a.setAttribute('aria-label', 'Import KML, KMZ, atau DXF');
+  a.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" ' +
+    'stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="M7 9l5-5 5 5"/>' +
+    '<path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>';
+  L.DomEvent.disableClickPropagation(div);
+  L.DomEvent.on(a, 'click', function (e) { L.DomEvent.preventDefault(e); $('fileImport').click(); });
+  return div;
+};
+importCtl.addTo(map);
 
 function areaHa(ring) {                       // perkiraan luas (hektar)
   const lat0 = ring.reduce(function (s, c) { return s + c[1]; }, 0) / ring.length;
@@ -1056,7 +1085,6 @@ async function handleImportFile_(file) {
   openImportModal_();
 }
 
-$('btnImport').onclick = function () { $('fileImport').click(); };
 $('fileImport').onchange = async function () {
   const f = this.files[0];
   this.value = '';
