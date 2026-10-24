@@ -103,6 +103,8 @@
     #flightModal { align-items:flex-end; justify-content:flex-end; }
     #flightModal .modal { width:440px; margin:0 16px 60px 0; }
   }
+
+    #btnOpenForm { display:none !important; }
 </style>
 </head>
 <body>
@@ -329,7 +331,13 @@ function openModal() {
   $('flightModal').style.display = 'flex';
   clampDrag();
 }
-function closeModal() { $('flightModal').style.display = 'none'; }
+function closeModal() {                          // menutup popup = membuang poligon
+  $('flightModal').style.display = 'none';
+  const l = currentLayer;
+  currentLayer = null;
+  if (l) map.removeLayer(l);
+  updatePolygon();
+}
 $('btnCloseModal').onclick = closeModal;
 $('btnOpenForm').onclick = openModal;
 $('btnMinModal').onclick = function () {
@@ -695,12 +703,13 @@ document.querySelectorAll('.chip').forEach(function (c) {
 setInterval(function () { if (idToken && state.view === 'flight') loadFlights(); }, 60000);
 
 /* ---------- GAMBAR POLIGON ---------- */
+try { map.pm.setLang('id'); } catch (e) {}      // label tombol alat gambar berbahasa Indonesia
 map.pm.addControls({
   position: 'topleft',
   drawMarker: false, drawCircleMarker: false, drawPolyline: false,
   drawCircle: false, drawText: false, cutPolygon: false, rotateMode: false,
   drawRectangle: true, drawPolygon: true,
-  editMode: true, dragMode: true, removalMode: true
+  editMode: true, dragMode: true, removalMode: false
 });
 
 function areaHa(ring) {                       // perkiraan luas (hektar)
@@ -738,6 +747,18 @@ function adoptLayer(layer) {                 // dipakai hasil gambar maupun hasi
   openModal();
 }
 map.on('pm:create', function (e) { adoptLayer(e.layer); });
+/* Backspace = hapus titik terakhir saat menggambar */
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Backspace') return;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) return;   // jangan ganggu pengetikan
+  if (!map.pm.globalDrawModeEnabled()) return;
+  const shape = map.pm.Draw.getActiveShape();
+  const d = shape && map.pm.Draw[shape];
+  if (d && typeof d._removeLastVertex === 'function') {
+    e.preventDefault();
+    d._removeLastVertex();
+  }
+});
 
 /* ====================== IMPORT KML / KMZ / DXF ====================== */
 let imp = { cands: [], file: '', kind: 'll', bulge: false };
