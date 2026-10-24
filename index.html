@@ -529,6 +529,48 @@ function zoomToIupk(force) {
 }
 loadIupkExtent();
 
+/* ---- Tipiskan garis IUPK ---- */
+const IUPK_LINE_FACTOR = 0.6;   // 1 = ketebalan asli; 0.6 = 40% lebih tipis; ubah sesukamu
+
+function scaleWidth_(v, f) {
+  if (v == null) return f;                                   // bawaan 1px
+  if (typeof v === 'number') return v * f;
+  if (v && Array.isArray(v.stops)) {                         // format lama {stops:[[zoom,lebar],...]}
+    const o = Object.assign({}, v);
+    o.stops = v.stops.map(function (s) { return [s[0], typeof s[1] === 'number' ? s[1] * f : s[1]]; });
+    return o;
+  }
+  if (Array.isArray(v) && v[0] === 'interpolate') {          // format ekspresi
+    const o = v.slice();
+    for (let i = 4; i < o.length; i += 2) if (typeof o[i] === 'number') o[i] = o[i] * f;
+    return o;
+  }
+  return null;                                               // bentuk lain: biarkan
+}
+
+function thinLines_(lyr, f) {
+  let tries = 0;
+  const timer = setInterval(function () {
+    tries++;
+    try {
+      const gl = lyr.getMaplibreMap && lyr.getMaplibreMap();
+      if (gl && gl.isStyleLoaded()) {
+        clearInterval(timer);
+        let n = 0;
+        (gl.getStyle().layers || []).forEach(function (l) {
+          if (l.type !== 'line') return;
+          const nv = scaleWidth_(gl.getPaintProperty(l.id, 'line-width'), f);
+          if (nv != null) { gl.setPaintProperty(l.id, 'line-width', nv); n++; }
+        });
+        console.info('Garis IUPK ditipiskan pada ' + n + ' layer style');
+        return;
+      }
+    } catch (e) { clearInterval(timer); console.warn('Gagal menipiskan garis:', e); return; }
+    if (tries > 40) { clearInterval(timer); console.warn('Style IUPK tidak siap, garis tidak ditipiskan'); }
+  }, 500);
+}
+if (iupkLayer) iupkLayer.on('add', function () { thinLines_(iupkLayer, IUPK_LINE_FACTOR); });
+  
 const iupkBtn = L.control({ position: 'topright' });
 iupkBtn.onAdd = function () {
   const b = L.DomUtil.create('button');
