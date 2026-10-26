@@ -137,13 +137,67 @@
   .mfchip { padding:5px 10px; border-radius:16px; border:2px solid #bbb; background:#fff; color:#222; font-size:13px; }
   .mfchip.on { background:var(--vale-dark); color:#fff; border-color:var(--vale-dark); }
   .badge { color:#fff; border-radius:10px; padding:2px 8px; font-size:12px; white-space:nowrap; }
+    /* ===== Flight Status (saklar) & filter ===== */
+  #statusBox { width:196px; max-height:calc(100% - 20px); overflow:auto; padding:8px 9px; }
+  #statusBox .fs-title { display:flex; flex-direction:column; margin-bottom:5px; }
+  #statusBox .fs-title b { margin:0; font-size:12.5px; color:#333; }
+  #statusBox .fs-title small { font-size:10.5px; color:#7a8a8a; }
+  .fs { display:flex; align-items:center; gap:8px; width:100%; box-sizing:border-box; margin-top:4px;
+        padding:6px 8px; border:1.5px solid #cfdada; border-radius:9px; background:#fff; color:#1d2b2b;
+        font-size:13px; text-align:left; cursor:pointer; transition:background .15s, border-color .15s, transform .05s; }
+  .fs:hover { background:#eef6f6; border-color:var(--vale); }
+  .fs:active { transform:scale(.98); }
+  .fs .sw { position:relative; width:28px; height:16px; border-radius:8px; background:var(--c); flex-shrink:0; transition:background .15s; }
+  .fs .sw::after { content:''; position:absolute; top:2px; left:14px; width:12px; height:12px; border-radius:50%;
+                   background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.35); transition:left .15s; }
+  .fs .n { margin-left:auto; min-width:16px; text-align:right; font-weight:bold; color:#445; }
+  .fs.off { background:#f3f5f5; color:#8a9696; }
+  .fs.off .sw { background:#c5cece; }
+  .fs.off .sw::after { left:2px; }
+  .fs.off .n { color:#9aa5a5; }
+  .fs[data-status="ongoing"] { --c:#2e9e44; }
+  .fs[data-status="planned"] { --c:#ff8c00; }
+  .fs[data-status="ended"]   { --c:#8a8a8a; }
+
+  .flt-toggle { display:flex; align-items:center; gap:6px; width:100%; margin-top:8px; padding:7px 2px 2px;
+                background:none; color:var(--vale-dark); border:0; border-top:1px solid #dde5e5; border-radius:0;
+                font-size:12.5px; font-weight:bold; text-align:left; cursor:pointer; }
+  .flt-toggle .caret { margin-left:auto; transition:transform .15s; }
+  .flt-toggle.open .caret { transform:rotate(180deg); }
+  .flt-badge { display:none; min-width:16px; height:16px; line-height:16px; text-align:center; border-radius:8px;
+               background:var(--vale-yellow); color:#222; font-size:10.5px; padding:0 4px; }
+  #fltBody { display:none; margin-top:2px; }
+  #fltBody.open { display:block; }
+  #fltBody label { display:block; margin-top:6px; font-size:11px; color:#556; }
+  #fltBody input, #fltBody select { width:100%; box-sizing:border-box; margin-top:2px; padding:5px; font-size:13px;
+                                    border:1px solid #bbb; border-radius:6px; background:#fff; }
+  .flt-actions { display:flex; gap:6px; margin-top:8px; }
+  .flt-actions button { flex:1; padding:6px 4px; font-size:12px; }
+  .flt-actions .ghost { background:#e7eded; color:#344; }
+  #fltResult { margin-top:6px; font-size:11px; color:#667; }
+
+  /* logo halaman login */
+  #landing .logo { margin-bottom:6px; }
+  #landing .logo img { display:none; height:64px; max-width:230px; object-fit:contain; margin:0 auto;
+                       filter:brightness(0) invert(1); }
 </style>
 </head>
 <body>
 <div id="app" class="login-mode">
 
   <div id="landing">
-    <div class="logo">🛩️</div>
+      <div class="logo">
+      <img id="landLogo" src="logo.png" alt="Logo"
+           onload="this.style.display='block';document.getElementById('landMark').style.display='none'">
+      <svg id="landMark" width="72" height="72" viewBox="0 0 48 48" fill="none" stroke="#fff"
+           stroke-width="2.4" stroke-linecap="round" aria-hidden="true">
+        <circle cx="24" cy="24" r="22" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/>
+        <path d="M17 17l14 14M31 17L17 31"/>
+        <circle cx="14" cy="14" r="4.5"/><circle cx="34" cy="14" r="4.5"/>
+        <circle cx="14" cy="34" r="4.5"/><circle cx="34" cy="34" r="4.5"/>
+        <circle cx="24" cy="24" r="3.2" fill="#EEA722" stroke="none"/>
+      </svg>
+    </div>
     <h1>UAV FLIGHT MONITORING</h1>
     <p>Sistem pendaftaran rencana terbang drone. Masuk dengan akun Google untuk melanjutkan.</p>
     <div class="box">
@@ -186,11 +240,23 @@
   <div id="mapWrap">
     <div id="map"></div>
 
-    <div id="statusBox">
-      <b>Flight Status</b>
-      <button class="st" data-status="ongoing"><i></i>Ongoing <span id="cnt-ongoing">0</span></button>
-      <button class="st" data-status="planned"><i></i>Active Plan <span id="cnt-planned">0</span></button>
-      <button class="st off" data-status="ended"><i></i>Ended <span id="cnt-ended">0</span></button>
+        <div id="statusBox">
+      <div class="fs-title"><b>Flight Status</b><small>Ketuk untuk tampil / sembunyi</small></div>
+      <button class="fs" data-status="ongoing" role="switch" aria-checked="true"><span class="sw"></span>Ongoing<span class="n" id="cnt-ongoing">0</span></button>
+      <button class="fs" data-status="planned" role="switch" aria-checked="true"><span class="sw"></span>Active plan<span class="n" id="cnt-planned">0</span></button>
+      <button class="fs off" data-status="ended" role="switch" aria-checked="false"><span class="sw"></span>Ended<span class="n" id="cnt-ended">0</span></button>
+
+      <button id="fltToggle" class="flt-toggle" aria-expanded="false">⚙ Filter <span id="fltBadge" class="flt-badge">0</span><span class="caret">▾</span></button>
+      <div id="fltBody">
+        <label>Tanggal<input type="date" id="fl-date"></label>
+        <label>PT<select id="fl-pt"></select></label>
+        <label>Pilot<select id="fl-pilot"></select></label>
+        <div class="flt-actions">
+          <button id="fl-zoom" type="button">🔍 Zoom hasil</button>
+          <button id="fl-reset" type="button" class="ghost">Reset</button>
+        </div>
+        <div id="fltResult"></div>
+      </div>
     </div>
 
     <div id="infoBox"><span id="info">Gambar poligon area terbang di peta, atau import dari file.</span></div>
@@ -743,29 +809,107 @@ async function loadFlights() {
   }
 }
 
-function renderFlights() {
-  const all = (state.flights && state.flights.features) || [];
-  const counts = { ongoing: 0, planned: 0, ended: 0 };
-  all.forEach(function (f) { if (counts[f.properties.status] !== undefined) counts[f.properties.status]++; });
-  Object.keys(counts).forEach(function (k) { $('cnt-' + k).textContent = counts[k]; });
+/* ---------- filter tampilan: tanggal, PT, pilot ---------- */
+const flt = { date: '', pt: '', pilot: '' };
+let fltSig = '';
 
-  flightsLayer.clearLayers();
-  flightsLayer.addData({
-    type: 'FeatureCollection',
-    features: all.filter(function (f) {
-      return state.filters[f.properties.status] && !(editingId && f.properties.flight_id === editingId);
-    })
+function passFilter(p) {
+  if (flt.date && p.flight_date !== flt.date) return false;
+  if (flt.pt && p.pt !== flt.pt) return false;
+  if (flt.pilot && p.nama !== flt.pilot) return false;
+  return true;
+}
+
+function uniqSorted_(arr) {
+  const m = {};
+  arr.forEach(function (v) { if (v) m[v] = 1; });
+  return Object.keys(m).sort(function (a, b) { return a.localeCompare(b); });
+}
+
+function fillSelect_(sel, firstLabel, values, current) {
+  sel.innerHTML = '<option value="">' + firstLabel + '</option>' + values.map(function (v) {
+    return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
+  }).join('');
+  sel.value = values.indexOf(current) >= 0 ? current : '';
+}
+
+function refreshFilterOptions(all) {               // daftar PT & pilot diambil dari data yang termuat
+  const pts = uniqSorted_(all.map(function (f) { return f.properties.pt; }));
+  if (flt.pt && pts.indexOf(flt.pt) < 0) flt.pt = '';
+  const pilots = uniqSorted_(all.filter(function (f) { return !flt.pt || f.properties.pt === flt.pt; })
+                                .map(function (f) { return f.properties.nama; }));
+  if (flt.pilot && pilots.indexOf(flt.pilot) < 0) flt.pilot = '';
+  const sig = pts.join('|') + '#' + pilots.join('|') + '#' + flt.pt + '#' + flt.pilot;
+  if (sig !== fltSig) {                            // jangan bangun ulang bila sama (agar dropdown tidak menutup sendiri)
+    fillSelect_($('fl-pt'), 'Semua PT', pts, flt.pt);
+    fillSelect_($('fl-pilot'), 'Semua pilot', pilots, flt.pilot);
+    fltSig = sig;
+  }
+}
+
+function syncStatusUi() {
+  document.querySelectorAll('#statusBox .fs').forEach(function (c) {
+    const on = !!state.filters[c.dataset.status];
+    c.classList.toggle('off', !on);
+    c.setAttribute('aria-checked', on ? 'true' : 'false');
   });
 }
 
-document.querySelectorAll('#statusBox .st').forEach(function (c) {
+function renderFlights() {
+  const all = (state.flights && state.flights.features) || [];
+  refreshFilterOptions(all);
+  const filtered = all.filter(function (f) { return passFilter(f.properties); });
+
+  const counts = { ongoing: 0, planned: 0, ended: 0 };      // jumlah mengikuti filter
+  filtered.forEach(function (f) { if (counts[f.properties.status] !== undefined) counts[f.properties.status]++; });
+  Object.keys(counts).forEach(function (k) { $('cnt-' + k).textContent = counts[k]; });
+
+  const shown = filtered.filter(function (f) {
+    return state.filters[f.properties.status] && !(editingId && f.properties.flight_id === editingId);
+  });
+  flightsLayer.clearLayers();
+  flightsLayer.addData({ type: 'FeatureCollection', features: shown });
+
+  const n = (flt.date ? 1 : 0) + (flt.pt ? 1 : 0) + (flt.pilot ? 1 : 0);
+  $('fltBadge').textContent = n;
+  $('fltBadge').style.display = n ? 'inline-block' : 'none';
+  $('fltResult').textContent = shown.length + ' area tampil' + (n ? ' (filter aktif)' : '');
+}
+
+document.querySelectorAll('#statusBox .fs').forEach(function (c) {
   c.onclick = function () {
     const s = c.dataset.status;
     state.filters[s] = !state.filters[s];
-    c.classList.toggle('off', !state.filters[s]);
+    syncStatusUi();
     renderFlights();
   };
 });
+
+$('fltToggle').onclick = function () {
+  const open = $('fltBody').classList.toggle('open');
+  this.classList.toggle('open', open);
+  this.setAttribute('aria-expanded', open ? 'true' : 'false');
+};
+$('fl-date').onchange = function () {
+  flt.date = this.value;
+  if (flt.date && flt.date < new Date().toLocaleDateString('sv-SE') && !state.filters.ended) {
+    state.filters.ended = true;                    // tanggal lampau → sekalian tampilkan yang sudah selesai
+    syncStatusUi();
+  }
+  renderFlights();
+};
+$('fl-pt').onchange = function () { flt.pt = this.value; flt.pilot = ''; renderFlights(); };
+$('fl-pilot').onchange = function () { flt.pilot = this.value; renderFlights(); };
+$('fl-reset').onclick = function () {
+  flt.date = ''; flt.pt = ''; flt.pilot = '';
+  $('fl-date').value = '';
+  renderFlights();
+};
+$('fl-zoom').onclick = function () {
+  const b = flightsLayer.getBounds();
+  if (b.isValid()) map.fitBounds(b, { padding: [40, 40], maxZoom: 17 });
+  else toast('Tidak ada area yang cocok dengan filter', false);
+};
 setInterval(function () { if (idToken && state.view === 'flight') loadFlights(); }, 60000);
 
 /* =====================================================================
