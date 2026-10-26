@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#00807C">
-<title>UAV Flight Monitoring</title>
+<title>UAV FLIGHT MONITORING</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.css">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css">
@@ -12,10 +12,25 @@
   :root { --vale:#00807C; --vale-dark:#005F5C; --vale-deep:#00403E; --vale-yellow:#EEA722; }
   html, body { height:100%; margin:0; font-family:Arial,sans-serif; }
   #app { display:flex; flex-direction:column; height:100%; }
-  header { padding:8px 12px; background:var(--vale); color:#fff; display:flex;
-           align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
-  header h1 { font-size:16px; margin:0; }
-  #userBox { display:flex; align-items:center; gap:8px; font-size:13px; }
+  header { padding:6px 14px; background:var(--vale); color:#fff; display:grid;
+           grid-template-columns:1fr auto 1fr; align-items:center; gap:10px; }
+  .brand-left { display:flex; align-items:center; min-width:0; }
+  #brandLogo { display:none; height:28px; max-width:150px; object-fit:contain; background:#fff;
+               border-radius:8px; padding:4px 9px; }
+  .brand-title { text-align:center; line-height:1.15; }
+  .brand-title h1 { margin:0; font-size:16px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; white-space:nowrap; }
+  .brand-title small { display:block; margin-top:2px; font-size:10.5px; letter-spacing:.2em;
+                       text-transform:uppercase; color:#d6efee; white-space:nowrap; }
+  .brand-title::after { content:''; display:block; width:34px; height:2px; margin:4px auto 0;
+                        background:var(--vale-yellow); border-radius:2px; }
+  @media (max-width:600px) {
+    header { grid-template-columns:auto 1fr auto; padding:6px 10px; gap:8px; }
+    .brand-title h1 { font-size:12.5px; letter-spacing:.08em; }
+    .brand-title small { display:none; }
+    #userName { display:none; }
+    #brandLogo { height:24px; max-width:96px; padding:3px 7px; }
+  }
+  #userBox { display:flex; align-items:center; gap:8px; font-size:13px; justify-self:end; }
   #nav { display:none; background:var(--vale-dark); padding:0 6px; overflow-x:auto; }
   #nav button { background:none; border-radius:0; color:#d6efee; padding:10px 12px;
                 border-bottom:3px solid transparent; white-space:nowrap; }
@@ -138,7 +153,23 @@
   </div>
 
   <header>
-    <h1>UAV Flight Monitoring</h1>
+    <div class="brand-left">
+      <!-- Taruh file logo.png di repo (sejajar index.html). Selama belum ada, tampil ikon drone. -->
+      <img id="brandLogo" src="logo.png" alt="Logo"
+           onload="this.style.display='block';document.getElementById('brandMark').style.display='none'">
+      <svg id="brandMark" width="36" height="36" viewBox="0 0 48 48" fill="none" stroke="#fff"
+           stroke-width="2.4" stroke-linecap="round" aria-hidden="true">
+        <circle cx="24" cy="24" r="22" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/>
+        <path d="M17 17l14 14M31 17L17 31"/>
+        <circle cx="14" cy="14" r="4.5"/><circle cx="34" cy="14" r="4.5"/>
+        <circle cx="14" cy="34" r="4.5"/><circle cx="34" cy="34" r="4.5"/>
+        <circle cx="24" cy="24" r="3.2" fill="#EEA722" stroke="none"/>
+      </svg>
+    </div>
+    <div class="brand-title">
+      <h1>UAV Flight Monitoring</h1>
+      <small>Pomalaa Operations</small>
+    </div>
     <div id="userBox">
       <span id="userName"></span>
       <button id="btnLogout" style="display:none;padding:4px 10px;background:rgba(255,0,0,.2)">Log Out</button>
