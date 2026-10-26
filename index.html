@@ -312,7 +312,14 @@ const LABELS = { ongoing: 'Ongoing', planned: 'Active plan', ended: 'Ended' };
 /* =====================================================================
    STATE & HELPER
    ===================================================================== */
-let idToken = sessionStorage.getItem('idToken');
+/* sesi login tersimpan (localStorage) */
+const SESSION_KEY = 'uavSession';
+function loadSession() { try { return localStorage.getItem(SESSION_KEY); } catch (e) { return null; } }
+function saveSession(t) { try { localStorage.setItem(SESSION_KEY, t); } catch (e) {} }
+function clearSession() { try { localStorage.removeItem(SESSION_KEY); } catch (e) {} }
+try { sessionStorage.removeItem('idToken'); } catch (e) {}      // sisa versi lama
+
+let idToken = loadSession();
 let currentLayer = null;      // poligon yang sedang dibuat / diubah
 let polygonRing = null;
 let editingId = null;         // terisi saat mode ubah rencana terbang
@@ -467,16 +474,13 @@ document.querySelectorAll('#nav button').forEach(function (b) {
 function initGoogle() {
   google.accounts.id.initialize({ client_id: CLIENT_ID, callback: onLogin });
   google.accounts.id.renderButton($('gbtn'), { theme: 'filled_blue', size: 'large', text: 'signin_with' });
-  if (idToken) { $('loginMsg').textContent = 'Memeriksa sesi...'; checkUser(); }
 }
-function onLogin(resp) {
+function onLogin(resp) {                          // token Google ditukar dengan sesi 30 hari
   idToken = resp.credential;
-  sessionStorage.setItem('idToken', idToken);
-  checkUser();
+  $('loginMsg').textContent = 'Masuk...';
+  checkUser(true);
 }
-function logout(message) {
-  idToken = null;
-  sessionStorage.removeItem('idToken');
+function showLoginScreen(message) {
   state.user = null; state.profile = null; state.flights = null;
   didInitialZoom = false;
   myFlights = [];
@@ -484,15 +488,22 @@ function logout(message) {
   $('userName').textContent = '';
   $('btnLogout').style.display = 'none';
   $('nav').style.display = 'none';
+  $('gbtn').style.visibility = '';
   setView('login');                              // juga menutup popup dan membuang poligon
   $('loginMsg').textContent = message || '';
 }
+function logout(message) {
+  idToken = null;
+  clearSession();
+  showLoginScreen(message);
+}
 $('btnLogout').onclick = function () { logout(); };
 
-async function checkUser() {
+async function checkUser(fresh) {
   try {
-    const r = await api('me');
+    const r = await api(fresh ? 'login' : 'me');
     if (!r.ok) throw new Error(r.error);
+    if (r.session) { idToken = r.session; saveSession(r.session); }   // sesi diperpanjang tiap aplikasi dibuka
     state.user = r.user; state.profile = r.profile;
     $('userName').textContent = 'Halo, ' + r.user.name;
     $('btnLogout').style.display = '';
@@ -506,7 +517,9 @@ async function checkUser() {
       setView('flight');
     }
   } catch (err) {
-    if (err.message !== 'Sesi habis') logout('Login gagal: ' + err.message);
+    if (err.message === 'Sesi habis') return;     // sudah ditangani api()
+    if (fresh) logout('Login gagal: ' + err.message);
+    else showLoginScreen('Tidak bisa terhubung ke server (' + err.message + '). Muat ulang halaman untuk mencoba lagi.');
   }
 }
 
@@ -1401,6 +1414,14 @@ $('btnPilot').onclick = async function () {
     btn.textContent = (state.profile && state.profile.registered) ? 'Perbarui data pilot' : label;
   }
 };
+
+
+/* lanjutkan sesi yang tersimpan (tanpa menunggu skrip Google) */
+if (idToken) {
+  $('loginMsg').textContent = 'Memeriksa sesi...';
+  $('gbtn').style.visibility = 'hidden';
+  checkUser(false);
+}
 </script>
 
 <!-- Login Google dimuat PALING AKHIR supaya initGoogle pasti sudah terdefinisi -->
