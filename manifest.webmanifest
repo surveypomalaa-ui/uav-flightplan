@@ -1,0 +1,19 @@
+{
+  "id": "./",
+  "name": "UAV Flight Monitoring",
+  "short_name": "UAV Monitoring",
+  "description": "Pendaftaran dan pemantauan rencana terbang drone - IGP Pomalaa",
+  "lang": "id",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#00403E",
+  "theme_color": "#00807C",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
