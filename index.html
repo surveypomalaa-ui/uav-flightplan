@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#00807C">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="UAV Monitoring">
 <title>UAV FLIGHT MONITORING</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.css">
@@ -1570,5 +1576,13 @@ if (idToken) {
 
 <!-- Login Google dimuat PALING AKHIR supaya initGoogle pasti sudah terdefinisi -->
 <script src="https://accounts.google.com/gsi/client" async defer onload="initGoogle()"></script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').catch(function (e) { console.warn('SW gagal:', e); });
+  });
+}
+</script>
 </body>
 </html>
